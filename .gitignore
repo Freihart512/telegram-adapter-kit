@@ -1,0 +1,20 @@
+# Dependencies
+node_modules
+
+# Build & coverage
+dist
+coverage
+*.tsbuildinfo
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# Logs & OS
+*.log
+.DS_Store
+
+# Caches
+.pnpm-store
+.npm

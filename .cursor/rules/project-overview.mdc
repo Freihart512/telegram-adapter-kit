@@ -1,0 +1,27 @@
+---
+description: telegram-adapter-kit context, specs, and non-negotiables
+alwaysApply: true
+---
+
+# telegram-adapter-kit
+
+TypeScript SDK for Telegram: runtime `registerBot` / subscriptions / normalized incoming events / `sendMessage` (including forum topics). Two internal adapters behind one public API: **MTProto (GramJS)** and **Bot API (grammY)**.
+
+## Authoritative docs (this repo)
+
+- `Documentacion/PRD-telegram-runtime-sdk.md` — product scope, MVP, acceptance criteria
+- `Documentacion/TRD-telegram-runtime-sdk.md` — architecture, contracts, folder layout, testing
+- `Documentacion/BACKLOG-telegram-runtime-sdk.md` — UC / TT tasks and order
+
+Prefer aligning code and PRs with the **TRD** structure and **BACKLOG** task IDs when relevant.
+
+## Architecture rules
+
+- **Domain-agnostic core**: no business-domain imports in `src/core` or public contracts.
+- **Adapters** implement `TelegramProviderAdapter`; core talks to adapters only via contracts — not GramJS/grammY types on the public surface.
+- **Errors**: map provider failures to SDK typed errors; avoid throwing raw library errors across the public API.
+- **Secrets**: never log or echo `apiHash`, full `stringSession`, or `botToken`; mask in logs and error metadata.
+
+## Stack (target per TRD)
+
+Node.js LTS, TypeScript strict, `tsup` (ESM+CJS+types), `vitest`, ESLint + Prettier.
