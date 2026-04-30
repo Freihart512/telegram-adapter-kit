@@ -1,0 +1,23 @@
+{
+  "name": "telegram-adapter-kit",
+  "version": "0.0.0",
+  "description": "TypeScript toolkit for Telegram: runtime bot registration, subscriptions, normalized messages, MTProto (GramJS) and Bot API (grammY).",
+  "keywords": [
+    "telegram",
+    "gramjs",
+    "grammY",
+    "mtproto",
+    "bot-api",
+    "typescript"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "build": "node -e \"console.log('[TT-001] Build will be configured in TT-005.');\"",
+    "test": "node -e \"console.log('[TT-001] Tests will be configured in TT-004.');\"",
+    "lint": "node -e \"console.log('[TT-001] Lint will be configured in TT-003.');\"",
+    "typecheck": "node -e \"console.log('[TT-001] Typecheck will be configured in TT-002.');\""
+  }
+}
