@@ -1,0 +1,28 @@
+---
+description: TypeScript layout and API conventions for this SDK
+globs: "**/*.{ts,mts,cts}"
+alwaysApply: false
+---
+
+# TypeScript SDK conventions
+
+## Layout (mirror TRD)
+
+- `src/contracts/` — public SDK types + internal adapter contracts (`sdk`, `adapter`, `events`, `messages`, `lifecycle`, `operations`, `capabilities`)
+- `src/core/` — `runtime-manager`, registries, `event-bus` (no Telegram provider imports)
+- `src/adapters/telegram/` — resolver, `mtproto/`, `bot-api/`, capabilities
+- `src/errors/` — typed error hierarchy from PRD/TRD
+- `src/observability/` — `Logger`, noop implementation
+- `src/utils/` — validators, timeout/abort, retry helpers
+- `tests/unit/`, `tests/contract/`, `examples/`
+
+## Public API
+
+- Stable facade: `TelegramRuntimeSdk` (register/start/stop bots, subscriptions, `sendMessage`, `onMessage` / `onError` / `onBotStateChange`).
+- Async operations accept `OperationOptions` (`timeoutMs`, `signal`) where specified in TRD.
+- Bot lifecycle states: `registered` | `starting` | `started` | `stopping` | `stopped` | `error` — honor transition rules and idempotency tables in PRD §11.2 / TRD §7.7.
+
+## Quality bar
+
+- No `any` on exported public types.
+- Unit tests for core; contract tests for adapter behavior (lifecycle, bind/unbind, send chat/topic, error mapping).
