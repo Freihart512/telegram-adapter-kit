@@ -3,6 +3,7 @@ export { ValidationError } from "./validation-error.js";
 export { BotNotFoundError } from "./bot-not-found-error.js";
 export { BotAlreadyExistsError } from "./bot-already-exists-error.js";
 export { BotNotStartedError } from "./bot-not-started-error.js";
+export { SubscriptionAlreadyExistsError } from "./subscription-already-exists-error.js";
 export { SubscriptionNotFoundError } from "./subscription-not-found-error.js";
 export { SendMessageError } from "./send-message-error.js";
 export { TransientNetworkError } from "./transient-network-error.js";

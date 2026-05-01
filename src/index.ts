@@ -14,6 +14,7 @@ export {
   OperationCancelledError,
   OperationTimeoutError,
   SendMessageError,
+  SubscriptionAlreadyExistsError,
   SubscriptionNotFoundError,
   TelegramSdkError,
   TransientNetworkError,
@@ -23,6 +24,8 @@ export type { SdkErrorMeta } from "./errors/index.js";
 
 export { BotRegistry } from "./core/bot-registry.js";
 export type { BotRecord } from "./core/bot-registry.js";
+export { SubscriptionRegistry } from "./core/subscription-registry.js";
+export type { SubscriptionBinding } from "./core/subscription-registry.js";
 
 export type {
   BotApiCredentials,

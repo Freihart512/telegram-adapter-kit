@@ -14,7 +14,6 @@ export const BotLifecycle = {
   Error: "error",
 } as const;
 
-
 export type BotRecord = Readonly<{
   botId: string;
   runtimeKind: TelegramRuntimeKind;
@@ -60,33 +59,32 @@ const START_TRANSITIONS: Record<BotLifecycleStatus, TransitionDecision> = {
   },
 };
 
-const COMPLETE_START_TRANSITIONS: Record<BotLifecycleStatus, TransitionDecision> =
-  {
-    [BotLifecycle.Starting]: {
-      kind: "transition",
-      next: BotLifecycle.Started,
-    },
-    [BotLifecycle.Registered]: {
-      kind: "conflict",
-      message: "completeStart requires status starting",
-    },
-    [BotLifecycle.Started]: {
-      kind: "conflict",
-      message: "completeStart requires status starting",
-    },
-    [BotLifecycle.Stopping]: {
-      kind: "conflict",
-      message: "completeStart requires status starting",
-    },
-    [BotLifecycle.Stopped]: {
-      kind: "conflict",
-      message: "completeStart requires status starting",
-    },
-    [BotLifecycle.Error]: {
-      kind: "conflict",
-      message: "completeStart requires status starting",
-    },
-  };
+const COMPLETE_START_TRANSITIONS: Record<BotLifecycleStatus, TransitionDecision> = {
+  [BotLifecycle.Starting]: {
+    kind: "transition",
+    next: BotLifecycle.Started,
+  },
+  [BotLifecycle.Registered]: {
+    kind: "conflict",
+    message: "completeStart requires status starting",
+  },
+  [BotLifecycle.Started]: {
+    kind: "conflict",
+    message: "completeStart requires status starting",
+  },
+  [BotLifecycle.Stopping]: {
+    kind: "conflict",
+    message: "completeStart requires status starting",
+  },
+  [BotLifecycle.Stopped]: {
+    kind: "conflict",
+    message: "completeStart requires status starting",
+  },
+  [BotLifecycle.Error]: {
+    kind: "conflict",
+    message: "completeStart requires status starting",
+  },
+};
 
 const STOP_TRANSITIONS: Record<BotLifecycleStatus, TransitionDecision> = {
   [BotLifecycle.Started]: {
@@ -114,32 +112,31 @@ const STOP_TRANSITIONS: Record<BotLifecycleStatus, TransitionDecision> = {
   },
 };
 
-const COMPLETE_STOP_TRANSITIONS: Record<BotLifecycleStatus, TransitionDecision> =
-  {
-    [BotLifecycle.Stopping]: {
-      kind: "transition",
-      next: BotLifecycle.Stopped,
-    },
-    [BotLifecycle.Stopped]: {
-      kind: "noop",
-    },
-    [BotLifecycle.Registered]: {
-      kind: "conflict",
-      message: "completeStop requires status stopping or stopped",
-    },
-    [BotLifecycle.Starting]: {
-      kind: "conflict",
-      message: "completeStop requires status stopping or stopped",
-    },
-    [BotLifecycle.Started]: {
-      kind: "conflict",
-      message: "completeStop requires status stopping or stopped",
-    },
-    [BotLifecycle.Error]: {
-      kind: "conflict",
-      message: "completeStop requires status stopping or stopped",
-    },
-  };
+const COMPLETE_STOP_TRANSITIONS: Record<BotLifecycleStatus, TransitionDecision> = {
+  [BotLifecycle.Stopping]: {
+    kind: "transition",
+    next: BotLifecycle.Stopped,
+  },
+  [BotLifecycle.Stopped]: {
+    kind: "noop",
+  },
+  [BotLifecycle.Registered]: {
+    kind: "conflict",
+    message: "completeStop requires status stopping or stopped",
+  },
+  [BotLifecycle.Starting]: {
+    kind: "conflict",
+    message: "completeStop requires status stopping or stopped",
+  },
+  [BotLifecycle.Started]: {
+    kind: "conflict",
+    message: "completeStop requires status stopping or stopped",
+  },
+  [BotLifecycle.Error]: {
+    kind: "conflict",
+    message: "completeStop requires status stopping or stopped",
+  },
+};
 
 const MARK_ERROR_TRANSITIONS: Record<BotLifecycleStatus, TransitionDecision> = {
   [BotLifecycle.Starting]: {
@@ -285,11 +282,7 @@ export class BotRegistry {
     this.applyDecision(botId, rec, decision);
   }
 
-  private applyDecision(
-    botId: string,
-    rec: MutableBotRecord,
-    decision: TransitionDecision,
-  ): void {
+  private applyDecision(botId: string, rec: MutableBotRecord, decision: TransitionDecision): void {
     if (decision.kind === "noop") {
       return;
     }
@@ -320,9 +313,7 @@ export class BotRegistry {
       botId: rec.botId,
       runtimeKind: rec.runtimeKind,
       status: rec.status,
-      metadata: rec.metadata
-        ? Object.freeze({ ...rec.metadata })
-        : undefined,
+      metadata: rec.metadata ? Object.freeze({ ...rec.metadata }) : undefined,
     });
   }
 }
