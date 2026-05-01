@@ -1,8 +1,8 @@
 import type { BotStateEvent } from "./lifecycle.js";
 
 /**
- * Stable error surface for `onError` until concrete classes land in TT-011.
- * Implementations should extend this shape (discriminated `code`, no secrets in fields).
+ * Structural shape for `onError`. The runtime emits `TelegramSdkError` subclasses from `src/errors/` (TT-011),
+ * which satisfy this contract via `name`, `code`, `message`, and optional `cause`.
  */
 export type TelegramRuntimeError = {
   readonly name: string;
