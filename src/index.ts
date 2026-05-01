@@ -21,6 +21,9 @@ export {
 } from "./errors/index.js";
 export type { SdkErrorMeta } from "./errors/index.js";
 
+export { BotRegistry } from "./core/bot-registry.js";
+export type { BotRecord } from "./core/bot-registry.js";
+
 export type {
   BotApiCredentials,
   BotCredentials,
