@@ -96,6 +96,7 @@ await runtime.sendMessage({
 | [RELEASING.md](RELEASING.md) | Semver, Changesets, maintainer release flow (**TT-006**) |
 | [CHANGELOG.md](CHANGELOG.md) | Release history (updated by Changesets) |
 | Contracts (`src/contracts/`) | Public SDK + internal adapter types (**TT-010**, TRD §5) |
+| Errors (`src/errors/`) | Typed `TelegramSdkError` hierarchy + `mapUnknownToSdkError` (**TT-011**, PRD RF-07) |
 
 ## Security
 

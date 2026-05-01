@@ -1,0 +1,13 @@
+export { TelegramSdkError, type SdkErrorMeta } from "./base.js";
+export { ValidationError } from "./validation-error.js";
+export { BotNotFoundError } from "./bot-not-found-error.js";
+export { BotAlreadyExistsError } from "./bot-already-exists-error.js";
+export { BotNotStartedError } from "./bot-not-started-error.js";
+export { SubscriptionNotFoundError } from "./subscription-not-found-error.js";
+export { SendMessageError } from "./send-message-error.js";
+export { TransientNetworkError } from "./transient-network-error.js";
+export { OperationTimeoutError } from "./operation-timeout-error.js";
+export { OperationCancelledError } from "./operation-cancelled-error.js";
+export { CapabilityNotSupportedError } from "./capability-not-supported-error.js";
+export { LifecycleConflictError } from "./lifecycle-conflict-error.js";
+export { mapUnknownToSdkError } from "./map-external.js";

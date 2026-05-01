@@ -4,6 +4,23 @@
  */
 export const LIBRARY_NAME = "telegram-adapter-kit" as const;
 
+export {
+  BotAlreadyExistsError,
+  BotNotFoundError,
+  BotNotStartedError,
+  CapabilityNotSupportedError,
+  LifecycleConflictError,
+  mapUnknownToSdkError,
+  OperationCancelledError,
+  OperationTimeoutError,
+  SendMessageError,
+  SubscriptionNotFoundError,
+  TelegramSdkError,
+  TransientNetworkError,
+  ValidationError,
+} from "./errors/index.js";
+export type { SdkErrorMeta } from "./errors/index.js";
+
 export type {
   BotApiCredentials,
   BotCredentials,
