@@ -104,9 +104,9 @@ await runtime.sendMessage({
 
 ## Contributing
 
-Workflow (CI, PR template, branch protection) is defined in the backlog. Enable GitHub Actions as described in the TRD when **TT-030**–**TT-038** land.
-
-Versioning and npm releases are documented in [RELEASING.md](RELEASING.md) (**Changesets**, semver, dry-run checklist). CI alignment for publish is **TT-032**.
+- **Pull requests:** GitHub applies [`.github/pull_request_template.md`](.github/pull_request_template.md) (**TT-037**) for context, UC/TT traceability, tests, and checklist.
+- **CI on PRs:** [`.github/workflows/pr-checks.yml`](.github/workflows/pr-checks.yml) runs `npm ci`, then **lint**, **typecheck**, **test**, **build**, and **verify:dist** on Node 20 (**TT-035**; satisfies the intent of **TT-030** until a separate doc-only follow-up is needed). Enable **branch protection** to require this check on `master` (**TT-038**).
+- **Releases:** [RELEASING.md](RELEASING.md) (**Changesets**, semver). Publish automation is **TT-032** / **TT-036**.
 
 ## License
 
