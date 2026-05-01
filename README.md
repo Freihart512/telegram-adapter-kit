@@ -97,7 +97,7 @@ await runtime.sendMessage({
 | [CHANGELOG.md](CHANGELOG.md) | Release history (updated by Changesets) |
 | Contracts (`src/contracts/`) | Public SDK + internal adapter types (**TT-010**, TRD §5) |
 | Errors (`src/errors/`) | Typed `TelegramSdkError` hierarchy + `mapUnknownToSdkError` (**TT-011**, PRD RF-07) |
-| Core (`src/core/`) | `BotRegistry` in-memory lifecycle (**TT-012**, TRD §7.6) |
+| Core (`src/core/`) | `BotRegistry` + `SubscriptionRegistry` in-memory runtime registries (**TT-012**, **TT-013**). `SubscriptionRegistry.unregisterByBotId()` is available for `unregisterBot` cleanup flows. |
 
 ## Security
 
