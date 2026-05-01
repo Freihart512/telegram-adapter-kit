@@ -21,10 +21,13 @@ TypeScript toolkit for **Telegram** with a stable runtime API: register bots and
 
 1. Clone the repository and open the project root.
 2. Install dependencies: `npm install` (or `npm ci` when `package-lock.json` is present).
-3. Run scripts: `npm run build`, `npm test`, and `npm run lint` use placeholders until [TT-005](Documentacion/BACKLOG-telegram-runtime-sdk.md), [TT-004](Documentacion/BACKLOG-telegram-runtime-sdk.md), and [TT-003](Documentacion/BACKLOG-telegram-runtime-sdk.md) respectively.
-4. TypeScript: `npm run typecheck` runs `tsc` with strict settings over `src/**/*.ts` and `tests/**/*.ts` (see `tsconfig.json`). Source lives under `src/`; tests under `tests/`.
+3. Lint and format ([TT-003](Documentacion/BACKLOG-telegram-runtime-sdk.md)): `npm run lint` runs ESLint on `src/` and `tests/` (`eslint.config.js`, `typescript-eslint`, `eslint-config-prettier`). Use `npm run lint:fix` to auto-fix where possible. `npm run format` / `npm run format:check` run Prettier on TypeScript and selected config JSON/JS.
+4. `npm run build` and `npm test` stay placeholders until [TT-005](Documentacion/BACKLOG-telegram-runtime-sdk.md) and [TT-004](Documentacion/BACKLOG-telegram-runtime-sdk.md).
+5. TypeScript: `npm run typecheck` runs `tsc` with strict settings over `src/**/*.ts` and `tests/**/*.ts` (see `tsconfig.json`). Source lives under `src/`; tests under `tests/`.
 
 **Negative typecheck check:** introduce a deliberate type error in any included `.ts` file and confirm `npm run typecheck` exits with a non-zero status, then revert.
+
+**Negative lint check:** introduce a clear ESLint violation in `src/` or `tests/` (for example an unused binding) and confirm `npm run lint` fails, then revert.
 
 ## Installation
 
