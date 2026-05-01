@@ -23,7 +23,7 @@ TypeScript toolkit for **Telegram** with a stable runtime API: register bots and
 2. Install dependencies: `npm install` (or `npm ci` when `package-lock.json` is present).
 3. Lint and format ([TT-003](Documentacion/BACKLOG-telegram-runtime-sdk.md)): `npm run lint` runs ESLint on `src/` and `tests/` (`eslint.config.js`, `typescript-eslint`, `eslint-config-prettier`). Use `npm run lint:fix` to auto-fix where possible. `npm run format` / `npm run format:check` run Prettier on TypeScript and selected config JSON/JS.
 4. Tests ([TT-004](Documentacion/BACKLOG-telegram-runtime-sdk.md)): `npm run test` runs **Vitest** once (`vitest run`); `npm run test:watch` keeps the runner open. Unit specs live under `tests/unit/`; adapter contract tests will live under `tests/contract/` (bootstrap file present until [TT-027](Documentacion/BACKLOG-telegram-runtime-sdk.md)).
-5. `npm run build` remains a placeholder until [TT-005](Documentacion/BACKLOG-telegram-runtime-sdk.md).
+5. Build ([TT-005](Documentacion/BACKLOG-telegram-runtime-sdk.md)): `npm run build` runs **tsup** and writes `dist/index.mjs` (ESM), `dist/index.cjs` (CJS), source maps, `dist/index.d.ts` / `dist/index.d.cts`, and related maps. The `dist/` folder is gitignored; publishable files are listed in `package.json` `files`. After a build, `npm run verify:dist` smoke-imports both ESM and CJS outputs from the repo root.
 6. TypeScript: `npm run typecheck` runs `tsc` with strict settings over `src/**/*.ts` and `tests/**/*.ts` (see `tsconfig.json`). Source lives under `src/`; tests under `tests/`.
 
 **Negative typecheck check:** introduce a deliberate type error in any included `.ts` file and confirm `npm run typecheck` exits with a non-zero status, then revert.
