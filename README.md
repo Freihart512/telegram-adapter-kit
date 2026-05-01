@@ -15,13 +15,16 @@ TypeScript toolkit for **Telegram** with a stable runtime API: register bots and
 ## Requirements
 
 - Node.js **LTS** (see `engines` in `package.json`).
-- TypeScript **5.x** (recommended; toolchain arrives with [TT-002](Documentacion/BACKLOG-telegram-runtime-sdk.md)).
+- TypeScript **5.x** (declared in `devDependencies`; `npm run typecheck` uses [TT-002](Documentacion/BACKLOG-telegram-runtime-sdk.md) `tsconfig.json`).
 
 ## Bootstrap (local)
 
 1. Clone the repository and open the project root.
 2. Install dependencies: `npm install` (or `npm ci` when `package-lock.json` is present).
-3. Run scripts: `npm run build`, `npm test`, `npm run lint`, and `npm run typecheck`. Until later backlog tasks land, these print placeholders and exit successfully.
+3. Run scripts: `npm run build`, `npm test`, and `npm run lint` use placeholders until [TT-005](Documentacion/BACKLOG-telegram-runtime-sdk.md), [TT-004](Documentacion/BACKLOG-telegram-runtime-sdk.md), and [TT-003](Documentacion/BACKLOG-telegram-runtime-sdk.md) respectively.
+4. TypeScript: `npm run typecheck` runs `tsc` with strict settings over `src/**/*.ts` and `tests/**/*.ts` (see `tsconfig.json`). Source lives under `src/`; tests under `tests/`.
+
+**Negative typecheck check:** introduce a deliberate type error in any included `.ts` file and confirm `npm run typecheck` exits with a non-zero status, then revert.
 
 ## Installation
 
