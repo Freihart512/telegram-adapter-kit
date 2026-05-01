@@ -93,6 +93,8 @@ await runtime.sendMessage({
 | [PRD](Documentacion/PRD-telegram-runtime-sdk.md) | Vision, MVP scope, acceptance criteria |
 | [TRD](Documentacion/TRD-telegram-runtime-sdk.md) | Architecture, adapters, testing, release |
 | [Backlog](Documentacion/BACKLOG-telegram-runtime-sdk.md) | Traceable tasks (UC / TT) |
+| [RELEASING.md](RELEASING.md) | Semver, Changesets, maintainer release flow (**TT-006**) |
+| [CHANGELOG.md](CHANGELOG.md) | Release history (updated by Changesets) |
 
 ## Security
 
@@ -102,8 +104,10 @@ await runtime.sendMessage({
 
 ## Contributing
 
-Workflow (CI, PR template, branch protection) is defined in the backlog. After the repo is split from this workspace, enable GitHub Actions as described in the TRD.
+Workflow (CI, PR template, branch protection) is defined in the backlog. Enable GitHub Actions as described in the TRD when **TT-030**–**TT-038** land.
+
+Versioning and npm releases are documented in [RELEASING.md](RELEASING.md) (**Changesets**, semver, dry-run checklist). CI alignment for publish is **TT-032**.
 
 ## License
 
-_To be chosen when the standalone repository is published (e.g. MIT)._
+MIT — see `package.json` `license` field.
