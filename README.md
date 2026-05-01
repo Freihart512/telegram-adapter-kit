@@ -95,6 +95,7 @@ await runtime.sendMessage({
 | [Backlog](Documentacion/BACKLOG-telegram-runtime-sdk.md) | Traceable tasks (UC / TT) |
 | [RELEASING.md](RELEASING.md) | Semver, Changesets, maintainer release flow (**TT-006**) |
 | [CHANGELOG.md](CHANGELOG.md) | Release history (updated by Changesets) |
+| Contracts (`src/contracts/`) | Public SDK + internal adapter types (**TT-010**, TRD §5) |
 
 ## Security
 
