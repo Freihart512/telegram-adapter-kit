@@ -9,6 +9,7 @@ export {
   BotNotFoundError,
   BotNotStartedError,
   CapabilityNotSupportedError,
+  HandlerExecutionError,
   LifecycleConflictError,
   mapUnknownToSdkError,
   OperationCancelledError,
@@ -24,6 +25,8 @@ export type { SdkErrorMeta } from "./errors/index.js";
 
 export { BotRegistry } from "./core/bot-registry.js";
 export type { BotRecord } from "./core/bot-registry.js";
+export { EventBus } from "./core/event-bus.js";
+export type { EventChannel, EventMap } from "./core/event-bus.js";
 export { SubscriptionRegistry } from "./core/subscription-registry.js";
 export type { SubscriptionBinding } from "./core/subscription-registry.js";
 
