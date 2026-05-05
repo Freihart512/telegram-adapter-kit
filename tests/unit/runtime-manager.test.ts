@@ -1,0 +1,429 @@
+import { describe, expect, it, vi } from "vitest";
+import type { TelegramAdapterResolver } from "../../src/contracts/adapter.js";
+import type { TelegramProviderAdapter } from "../../src/contracts/adapter.js";
+import type { IncomingMessageEvent } from "../../src/contracts/events.js";
+import type {
+  RegisterBotInput,
+  RegisterSubscriptionInput,
+} from "../../src/contracts/operations.js";
+import { BotRegistry } from "../../src/core/bot-registry.js";
+import { SubscriptionRegistry } from "../../src/core/subscription-registry.js";
+import {
+  BotAlreadyExistsError,
+  BotNotFoundError,
+  BotNotStartedError,
+  createRuntimeManager,
+  LifecycleConflictError,
+  RuntimeManager,
+  SubscriptionAlreadyExistsError,
+  SubscriptionNotFoundError,
+  TransientNetworkError,
+  ValidationError,
+} from "../../src/index.js";
+
+const credentials = {
+  kind: "botApi" as const,
+  botToken: "stub-token",
+};
+
+const registerInput = (botId: string): RegisterBotInput => ({
+  botId,
+  credentials,
+});
+
+function createMockAdapter(): {
+  adapter: TelegramProviderAdapter;
+  getInbound(bindingId: string): ((e: IncomingMessageEvent) => void | Promise<void>) | undefined;
+} {
+  const inboundHandlers = new Map<string, (event: IncomingMessageEvent) => void | Promise<void>>();
+
+  const adapter: TelegramProviderAdapter = {
+    kind: "botApi",
+    capabilities: Object.freeze({
+      supportsOutgoingForumTopics: true,
+      supportsIncomingForumTopics: true,
+      supportsDynamicSubscriptions: true,
+    }),
+    registerBot: vi.fn(async () => {}),
+    unregisterBot: vi.fn(async () => {}),
+    startBot: vi.fn(async () => {}),
+    stopBot: vi.fn(async () => {}),
+    sendMessage: vi.fn(async (input) => ({
+      botId: input.botId,
+      chatId: String(input.chatId),
+      messageId: 1,
+      date: new Date("2026-01-01T00:00:00.000Z"),
+      raw: {},
+    })),
+    bindIncomingMessages: vi.fn(async (binding: RegisterSubscriptionInput, onMessage) => {
+      inboundHandlers.set(binding.bindingId, onMessage);
+    }),
+    unbindIncomingMessages: vi.fn(async (bindingId: string) => {
+      inboundHandlers.delete(bindingId);
+    }),
+    cleanupBot: vi.fn(async () => {}),
+  };
+
+  return {
+    adapter,
+    getInbound(bindingId: string) {
+      return inboundHandlers.get(bindingId);
+    },
+  };
+}
+
+function resolverFor(adapter: TelegramProviderAdapter): TelegramAdapterResolver {
+  return {
+    resolve: () => adapter,
+    resolveByBotId: () => adapter,
+  };
+}
+
+describe("RuntimeManager (TT-015)", () => {
+  it("registerBot invokes adapter then start/stop/unregister with cleanup", async () => {
+    const { adapter } = createMockAdapter();
+    const mgr = createRuntimeManager(resolverFor(adapter));
+
+    await mgr.registerBot(registerInput("bot-1"));
+    expect(adapter.registerBot).toHaveBeenCalledTimes(1);
+
+    await mgr.startBot("bot-1");
+    expect(adapter.startBot).toHaveBeenCalledTimes(1);
+
+    await mgr.stopBot("bot-1");
+    expect(adapter.stopBot).toHaveBeenCalledTimes(1);
+
+    await mgr.unregisterBot("bot-1");
+    expect(adapter.unregisterBot).toHaveBeenCalledTimes(1);
+    expect(adapter.cleanupBot).toHaveBeenCalledTimes(1);
+  });
+
+  it("rolls back bot registry when adapter.registerBot throws, then register works", async () => {
+    const { adapter } = createMockAdapter();
+    const registerMock = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("provider failed"))
+      .mockResolvedValue(undefined);
+    adapter.registerBot = registerMock;
+    const mgr = new RuntimeManager(resolverFor(adapter));
+
+    await expect(mgr.registerBot(registerInput("x"))).rejects.toBeInstanceOf(TransientNetworkError);
+
+    await mgr.registerBot(registerInput("x"));
+    await mgr.startBot("x");
+    await mgr.stopBot("x");
+    await mgr.unregisterBot("x");
+
+    expect(registerMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("sendMessage requires started bot", async () => {
+    const { adapter } = createMockAdapter();
+    const mgr = new RuntimeManager(resolverFor(adapter));
+
+    await mgr.registerBot(registerInput("b"));
+    await expect(
+      mgr.sendMessage({ botId: "b", chatId: -100n, text: "nope" }),
+    ).rejects.toBeInstanceOf(BotNotStartedError);
+
+    await mgr.startBot("b");
+    await expect(mgr.sendMessage({ botId: "b", chatId: -100n, text: "ok" })).resolves.toMatchObject(
+      {
+        messageId: 1,
+      },
+    );
+    expect(adapter.sendMessage).toHaveBeenCalledOnce();
+  });
+
+  it("unregisterBot runs adapter unregister/cleanup before clearing local subscription index", async () => {
+    const bots = new BotRegistry();
+    const subs = new SubscriptionRegistry((id) => bots.get(id) !== undefined);
+    const order: string[] = [];
+    const { adapter } = createMockAdapter();
+
+    adapter.unbindIncomingMessages = vi.fn(async () => {
+      order.push("unbind");
+    });
+    adapter.unregisterBot = vi.fn(async () => {
+      order.push("adapterUnregisterBot");
+    });
+    adapter.cleanupBot = vi.fn(async () => {
+      order.push("cleanupBot");
+    });
+
+    const origUnregisterByBot = subs.unregisterByBotId.bind(subs);
+    vi.spyOn(subs, "unregisterByBotId").mockImplementation((id) => {
+      order.push("localUnregisterByBotId");
+      return origUnregisterByBot(id);
+    });
+
+    const mgr = new RuntimeManager(resolverFor(adapter), {
+      botRegistry: bots,
+      subscriptionRegistry: subs,
+    });
+
+    await mgr.registerBot(registerInput("ord"));
+    await mgr.startBot("ord");
+    await mgr.registerSubscription({ bindingId: "b-a", botId: "ord", chatId: 1 });
+    await mgr.registerSubscription({ bindingId: "b-b", botId: "ord", chatId: 2 });
+    await mgr.stopBot("ord");
+    await mgr.unregisterBot("ord");
+
+    expect(order).toEqual([
+      "unbind",
+      "unbind",
+      "adapterUnregisterBot",
+      "cleanupBot",
+      "localUnregisterByBotId",
+    ]);
+  });
+
+  it("unregisterBot unbinds all bindings then cleanupBot", async () => {
+    const { adapter, getInbound } = createMockAdapter();
+    const mgr = new RuntimeManager(resolverFor(adapter));
+
+    await mgr.registerBot(registerInput("multi"));
+    await mgr.startBot("multi");
+    await mgr.registerSubscription({
+      bindingId: "s1",
+      botId: "multi",
+      chatId: -100n,
+    });
+    await mgr.registerSubscription({
+      bindingId: "s2",
+      botId: "multi",
+      chatId: -200n,
+    });
+    expect(getInbound("s1")).toBeDefined();
+    expect(getInbound("s2")).toBeDefined();
+
+    await mgr.stopBot("multi");
+    await mgr.unregisterBot("multi");
+
+    expect(adapter.unbindIncomingMessages).toHaveBeenCalledTimes(2);
+    expect(adapter.cleanupBot).toHaveBeenCalledOnce();
+    expect(adapter.unbindIncomingMessages).toHaveBeenCalledWith("s1", undefined);
+    expect(adapter.unbindIncomingMessages).toHaveBeenCalledWith("s2", undefined);
+  });
+
+  it("registerSubscription forwards filtered messages to onMessage", async () => {
+    const { adapter, getInbound } = createMockAdapter();
+    const mgr = new RuntimeManager(resolverFor(adapter));
+    const onMessage = vi.fn();
+
+    mgr.onMessage(onMessage);
+    await mgr.registerBot(registerInput("feed"));
+    await mgr.startBot("feed");
+    await mgr.registerSubscription({
+      bindingId: "b1",
+      botId: "feed",
+      chatId: -100n,
+      filters: { textIncludes: ["ping"] },
+    });
+
+    const deliver = getInbound("b1");
+
+    expect(deliver).toBeDefined();
+
+    await deliver!({
+      botId: "feed",
+      chatId: "-100",
+      messageId: 1,
+      text: "ignored",
+      date: new Date(),
+      raw: {},
+    });
+    expect(onMessage).not.toHaveBeenCalled();
+
+    await deliver!({
+      botId: "feed",
+      chatId: "-100",
+      messageId: 2,
+      text: "got ping!",
+      date: new Date(),
+      raw: {},
+    });
+    expect(onMessage).toHaveBeenCalledTimes(1);
+    expect(onMessage.mock.calls[0]![0]!.messageId).toBe(2);
+  });
+
+  it("registerSubscription rolls back registry when bind fails", async () => {
+    const { adapter } = createMockAdapter();
+    const bindMock = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("bind failed"))
+      .mockResolvedValue(undefined);
+    adapter.bindIncomingMessages = bindMock;
+
+    const mgr = new RuntimeManager(resolverFor(adapter));
+
+    await mgr.registerBot(registerInput("rollback"));
+    await mgr.startBot("rollback");
+
+    await expect(
+      mgr.registerSubscription({
+        bindingId: "lost",
+        botId: "rollback",
+        chatId: 1,
+      }),
+    ).rejects.toBeInstanceOf(TransientNetworkError);
+
+    await mgr.registerSubscription({
+      bindingId: "lost",
+      botId: "rollback",
+      chatId: 1,
+    });
+
+    expect(bindMock).toHaveBeenCalledTimes(2);
+
+    await mgr.unregisterSubscription("lost");
+    await mgr.stopBot("rollback");
+    await mgr.unregisterBot("rollback");
+  });
+
+  it("unregisterSubscription unbinds then removes registry entry", async () => {
+    const { adapter, getInbound } = createMockAdapter();
+    const mgr = new RuntimeManager(resolverFor(adapter));
+
+    await mgr.registerBot(registerInput("solo"));
+    await mgr.startBot("solo");
+    await mgr.registerSubscription({ bindingId: "one", botId: "solo", chatId: 1 });
+    expect(getInbound("one")).toBeDefined();
+
+    await mgr.unregisterSubscription("one");
+    expect(adapter.unbindIncomingMessages).toHaveBeenCalledWith("one", undefined);
+    expect(getInbound("one")).toBeUndefined();
+  });
+
+  it("unregisterSubscription throws SubscriptionNotFoundError for unknown id", async () => {
+    const { adapter } = createMockAdapter();
+    const mgr = new RuntimeManager(resolverFor(adapter));
+    await mgr.registerBot(registerInput("e"));
+    await mgr.startBot("e");
+
+    await expect(mgr.unregisterSubscription("missing")).rejects.toBeInstanceOf(
+      SubscriptionNotFoundError,
+    );
+    expect(adapter.unbindIncomingMessages).not.toHaveBeenCalled();
+  });
+
+  it("unregisterBot rejects when bot is still started", async () => {
+    const { adapter } = createMockAdapter();
+    const mgr = new RuntimeManager(resolverFor(adapter));
+
+    await mgr.registerBot(registerInput("run"));
+    await mgr.startBot("run");
+    await expect(mgr.unregisterBot("run")).rejects.toBeInstanceOf(LifecycleConflictError);
+
+    await mgr.stopBot("run");
+    await expect(mgr.unregisterBot("run")).resolves.toBeUndefined();
+  });
+
+  it("emits bot state changes on register and start (including starting)", async () => {
+    const { adapter } = createMockAdapter();
+    const mgr = new RuntimeManager(resolverFor(adapter));
+    const onState = vi.fn();
+
+    mgr.onBotStateChange(onState);
+
+    await mgr.registerBot(registerInput("s"));
+    expect(onState).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ botId: "s", status: "registered" }),
+    );
+
+    await mgr.startBot("s");
+    expect(onState).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ botId: "s", status: "starting", previousStatus: "registered" }),
+    );
+    expect(onState).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({ botId: "s", status: "started", previousStatus: "starting" }),
+    );
+  });
+
+  it("emits stopping then stopped when stopping a started bot", async () => {
+    const { adapter } = createMockAdapter();
+    const mgr = new RuntimeManager(resolverFor(adapter));
+    const onState = vi.fn();
+
+    mgr.onBotStateChange(onState);
+
+    await mgr.registerBot(registerInput("st"));
+    await mgr.startBot("st");
+    onState.mockClear();
+
+    await mgr.stopBot("st");
+
+    expect(onState).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ botId: "st", status: "stopping", previousStatus: "started" }),
+    );
+    expect(onState).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ botId: "st", status: "stopped", previousStatus: "stopping" }),
+    );
+  });
+
+  it("maps string throws from adapter to ValidationError", async () => {
+    const { adapter } = createMockAdapter();
+    adapter.registerBot = vi.fn(async () => {
+      throw "bad";
+    });
+    const mgr = new RuntimeManager(resolverFor(adapter));
+
+    await expect(mgr.registerBot(registerInput("bad-str"))).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it("reject duplicate bot registration via registry", async () => {
+    const { adapter } = createMockAdapter();
+    const mgr = new RuntimeManager(resolverFor(adapter));
+
+    await mgr.registerBot(registerInput("dup"));
+    await expect(mgr.registerBot(registerInput("dup"))).rejects.toBeInstanceOf(
+      BotAlreadyExistsError,
+    );
+    expect(adapter.registerBot).toHaveBeenCalledTimes(1);
+  });
+
+  it("reject duplicate subscription id", async () => {
+    const { adapter } = createMockAdapter();
+    const mgr = new RuntimeManager(resolverFor(adapter));
+
+    await mgr.registerBot(registerInput("subbot"));
+    await mgr.startBot("subbot");
+    await mgr.registerSubscription({ bindingId: "same", botId: "subbot", chatId: 1 });
+
+    await expect(
+      mgr.registerSubscription({ bindingId: "same", botId: "subbot", chatId: 1 }),
+    ).rejects.toBeInstanceOf(SubscriptionAlreadyExistsError);
+  });
+
+  it("reject unknown bot for startBot", async () => {
+    const { adapter } = createMockAdapter();
+    const mgr = new RuntimeManager(resolverFor(adapter));
+
+    await expect(mgr.startBot("nope")).rejects.toBeInstanceOf(BotNotFoundError);
+    expect(adapter.startBot).not.toHaveBeenCalled();
+  });
+
+  it("startBot emits error state when adapter.startBot fails", async () => {
+    const { adapter } = createMockAdapter();
+    adapter.startBot = vi.fn(async () => {
+      throw new Error("cannot start");
+    });
+    const mgr = new RuntimeManager(resolverFor(adapter));
+    const onState = vi.fn();
+
+    mgr.onBotStateChange(onState);
+
+    await mgr.registerBot(registerInput("err"));
+    await expect(mgr.startBot("err")).rejects.toThrow();
+
+    expect(adapter.startBot).toHaveBeenCalledOnce();
+    expect(onState).toHaveBeenLastCalledWith(
+      expect.objectContaining({ botId: "err", status: "error", previousStatus: "starting" }),
+    );
+  });
+});
