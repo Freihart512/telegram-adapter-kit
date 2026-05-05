@@ -42,12 +42,20 @@ npm install @your-scope/telegram-adapter-kit
 
 ## Quick start (illustrative)
 
-The public API is designed around a small facade (exact names follow the TRD). Example shape:
+The public API is built around **`createRuntimeManager` / `RuntimeManager`** (`TelegramRuntimeSdk`, **TT-015**) and a **`TelegramAdapterResolver`** that wires GramJS/Bot API adapters (**TT-027+**). Example shape:
 
 ```ts
-import { createTelegramRuntime } from "@your-scope/telegram-adapter-kit";
+import {
+  createRuntimeManager,
+  type TelegramAdapterResolver,
+} from "@your-scope/telegram-adapter-kit";
 
-const runtime = createTelegramRuntime({ logger: myLogger });
+const resolver = {
+  resolve: (input) => myAdapterFor(input.credentials.kind),
+  resolveByBotId: (botId) => adapterFor(botId),
+} satisfies TelegramAdapterResolver;
+
+const runtime = createRuntimeManager(resolver);
 
 // MTProto (GramJS)
 await runtime.registerBot({
@@ -88,16 +96,16 @@ await runtime.sendMessage({
 
 ## Documentation
 
-| Document | Purpose |
-|----------|---------|
-| [PRD](Documentacion/PRD-telegram-runtime-sdk.md) | Vision, MVP scope, acceptance criteria |
-| [TRD](Documentacion/TRD-telegram-runtime-sdk.md) | Architecture, adapters, testing, release |
-| [Backlog](Documentacion/BACKLOG-telegram-runtime-sdk.md) | Traceable tasks (UC / TT) |
-| [RELEASING.md](RELEASING.md) | Semver, Changesets, maintainer release flow (**TT-006**) |
-| [CHANGELOG.md](CHANGELOG.md) | Release history (updated by Changesets) |
-| Contracts (`src/contracts/`) | Public SDK + internal adapter types (**TT-010**, TRD §5) |
-| Errors (`src/errors/`) | Typed `TelegramSdkError` hierarchy + `mapUnknownToSdkError` (**TT-011**, PRD RF-07) |
-| Core (`src/core/`) | `BotRegistry`, `SubscriptionRegistry`, and `EventBus` for internal runtime orchestration (**TT-012**, **TT-013**, **TT-014**). `SubscriptionRegistry.unregisterByBotId()` is available for `unregisterBot` cleanup flows. |
+| Document                                                 | Purpose                                                                                                                                                                                                                                                                  |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [PRD](Documentacion/PRD-telegram-runtime-sdk.md)         | Vision, MVP scope, acceptance criteria                                                                                                                                                                                                                                   |
+| [TRD](Documentacion/TRD-telegram-runtime-sdk.md)         | Architecture, adapters, testing, release                                                                                                                                                                                                                                 |
+| [Backlog](Documentacion/BACKLOG-telegram-runtime-sdk.md) | Traceable tasks (UC / TT)                                                                                                                                                                                                                                                |
+| [RELEASING.md](RELEASING.md)                             | Semver, Changesets, maintainer release flow (**TT-006**)                                                                                                                                                                                                                 |
+| [CHANGELOG.md](CHANGELOG.md)                             | Release history (updated by Changesets)                                                                                                                                                                                                                                  |
+| Contracts (`src/contracts/`)                             | Public SDK + internal adapter types (**TT-010**, TRD §5)                                                                                                                                                                                                                 |
+| Errors (`src/errors/`)                                   | Typed `TelegramSdkError` hierarchy + `mapUnknownToSdkError` (**TT-011**, PRD RF-07)                                                                                                                                                                                      |
+| Core (`src/core/`)                                       | `RuntimeManager` / `createRuntimeManager` (**TT-015**) implement the public facade; `BotRegistry`, `SubscriptionRegistry`, and `EventBus` (**TT-012**–**TT-014**) back orchestration. `SubscriptionRegistry.unregisterByBotId()` supports `unregisterBot` cleanup flows. |
 
 ## Security
 

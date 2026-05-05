@@ -6,6 +6,8 @@ import type {
   SendMessageResult,
   TelegramRuntimeSdk,
 } from "../../src/index.js";
+import type { TelegramAdapterResolver } from "../../src/contracts/adapter.js";
+import { RuntimeManager } from "../../src/index.js";
 
 describe("contracts (TT-010)", () => {
   it("narrows BotCredentials by discriminant", () => {
@@ -38,5 +40,11 @@ describe("contracts (TT-010)", () => {
     expectTypeOf<ReturnType<TelegramRuntimeSdk["sendMessage"]>>().toEqualTypeOf<
       Promise<SendMessageResult>
     >();
+  });
+
+  it("RuntimeManager satisfies TelegramRuntimeSdk", () => {
+    const resolver = {} as TelegramAdapterResolver;
+    const mgr = new RuntimeManager(resolver);
+    expectTypeOf(mgr).toMatchTypeOf<TelegramRuntimeSdk>();
   });
 });
