@@ -11,4 +11,5 @@ export { OperationTimeoutError } from "./operation-timeout-error.js";
 export { OperationCancelledError } from "./operation-cancelled-error.js";
 export { CapabilityNotSupportedError } from "./capability-not-supported-error.js";
 export { LifecycleConflictError } from "./lifecycle-conflict-error.js";
+export { HandlerExecutionError } from "./handler-execution-error.js";
 export { mapUnknownToSdkError } from "./map-external.js";

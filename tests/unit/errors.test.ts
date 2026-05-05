@@ -5,6 +5,7 @@ import {
   BotNotFoundError,
   BotNotStartedError,
   CapabilityNotSupportedError,
+  HandlerExecutionError,
   LifecycleConflictError,
   mapUnknownToSdkError,
   OperationCancelledError,
@@ -31,6 +32,7 @@ describe("errors (TT-011)", () => {
     { Class: OperationCancelledError, code: "OPERATION_CANCELLED" },
     { Class: CapabilityNotSupportedError, code: "CAPABILITY_NOT_SUPPORTED" },
     { Class: LifecycleConflictError, code: "LIFECYCLE_CONFLICT" },
+    { Class: HandlerExecutionError, code: "HANDLER_EXECUTION_FAILED" },
   ];
 
   it.each(cases)("exposes stable code for $Class.name", ({ Class, code }) => {
