@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   quality:
-    name: lint, typecheck, test, build
+    name: lint, typecheck, coverage, build
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -35,8 +35,21 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Test
-        run: npm run test
+      - name: Test with coverage thresholds
+        run: npm run test:coverage
+
+      - name: Coverage summary
+        if: always()
+        run: |
+          node -e "const fs=require('node:fs');const p='coverage/coverage-summary.json';if(!fs.existsSync(p)){console.log('coverage-summary.json not found');process.exit(0)};const s=JSON.parse(fs.readFileSync(p,'utf8')).total;const pct=(v)=>typeof v==='number'?v.toFixed(2):'n/a';const md=['## Coverage summary','',`- Lines: ${pct(s.lines?.pct)}%`,`- Branches: ${pct(s.branches?.pct)}%`,`- Functions: ${pct(s.functions?.pct)}%`,`- Statements: ${pct(s.statements?.pct)}%`,'',`Thresholds: lines >= 80, branches >= 80, functions >= 80, statements >= 80`].join('\n');fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, md + '\n');console.log(md);"
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          if-no-files-found: warn
 
       - name: Build
         run: npm run build

@@ -10,6 +10,12 @@ export default defineConfig({
       reporter: ["text", "json-summary", "html"],
       reportsDirectory: "coverage",
       include: ["src/core/**/*.ts", "src/errors/**/*.ts"],
+      thresholds: {
+        lines: 80,
+        functions: 80,
+        branches: 80,
+        statements: 80,
+      },
     },
   },
 });
