@@ -19,6 +19,8 @@ import { BotNotFoundError } from "../errors/bot-not-found-error.js";
 import { BotNotStartedError } from "../errors/bot-not-started-error.js";
 import { mapUnknownToSdkError } from "../errors/map-external.js";
 import { SubscriptionNotFoundError } from "../errors/subscription-not-found-error.js";
+import { NoopLogger } from "../observability/noop-logger.js";
+import type { Logger } from "../observability/logger.js";
 import { BotLifecycle, BotRegistry } from "./bot-registry.js";
 import { EventBus } from "./event-bus.js";
 import { SubscriptionRegistry, type SubscriptionBinding } from "./subscription-registry.js";
@@ -36,6 +38,7 @@ export type RuntimeManagerDeps = Readonly<{
   botRegistry?: BotRegistry;
   subscriptionRegistry?: SubscriptionRegistry;
   eventBus?: EventBus;
+  logger?: Logger;
 }>;
 
 /** Orchestrates registries, event bus and provider adapter (`TelegramRuntimeSdk`, TRD §5.1, TT-015). */
@@ -43,6 +46,7 @@ export class RuntimeManager implements TelegramRuntimeSdk {
   private readonly bots: BotRegistry;
   private readonly subscriptions: SubscriptionRegistry;
   private readonly bus: EventBus;
+  private readonly logger: Logger;
 
   constructor(
     private readonly resolver: TelegramAdapterResolver,
@@ -50,6 +54,7 @@ export class RuntimeManager implements TelegramRuntimeSdk {
   ) {
     this.bots = deps?.botRegistry ?? new BotRegistry();
     this.bus = deps?.eventBus ?? new EventBus();
+    this.logger = deps?.logger ?? new NoopLogger();
     this.subscriptions =
       deps?.subscriptionRegistry ??
       new SubscriptionRegistry((botId) => this.bots.get(botId) !== undefined);
@@ -59,14 +64,24 @@ export class RuntimeManager implements TelegramRuntimeSdk {
     validateRegisterBotInput(input);
     validateOperationOptions(options);
     const adapter = this.adapterForRegister(input);
+    this.logger.debug("registerBot requested", {
+      botId: input.botId,
+      runtimeKind: input.credentials.kind,
+    });
 
     this.bots.register(input);
     try {
-      await this.guard(adapter.registerBot(input, options));
+      await this.guard(adapter.registerBot(input, options), "registerBot", {
+        botId: input.botId,
+      });
     } catch (cause) {
       this.bots.unregister(input.botId);
       throw cause;
     }
+    this.logger.info("bot registered", {
+      botId: input.botId,
+      runtimeKind: input.credentials.kind,
+    });
     this.notifyBotState(input.botId, BotLifecycle.Registered, undefined);
   }
 
@@ -76,15 +91,20 @@ export class RuntimeManager implements TelegramRuntimeSdk {
     this.requireBot(botId);
     const adapter = this.adapterForBot(botId);
     const bindings = this.subscriptions.listByBotId(botId);
+    this.logger.debug("unregisterBot requested", { botId, bindingCount: bindings.length });
 
     for (const binding of bindings) {
-      await this.guard(adapter.unbindIncomingMessages(binding.bindingId, options));
+      await this.guard(adapter.unbindIncomingMessages(binding.bindingId, options), "unbindIncomingMessages", {
+        botId,
+        bindingId: binding.bindingId,
+      });
     }
 
-    await this.guard(adapter.unregisterBot(botId, options));
-    await this.guard(adapter.cleanupBot(botId, options));
+    await this.guard(adapter.unregisterBot(botId, options), "unregisterBot", { botId });
+    await this.guard(adapter.cleanupBot(botId, options), "cleanupBot", { botId });
     this.subscriptions.unregisterByBotId(botId);
     this.bots.unregister(botId);
+    this.logger.info("bot unregistered", { botId });
   }
 
   async startBot(botId: string, options?: OperationOptions): Promise<void> {
@@ -92,6 +112,7 @@ export class RuntimeManager implements TelegramRuntimeSdk {
     validateOperationOptions(options);
     const rec = this.requireBot(botId);
     if (rec.status === BotLifecycle.Started) {
+      this.logger.warn("startBot skipped because bot is already started", { botId });
       return;
     }
 
@@ -102,7 +123,7 @@ export class RuntimeManager implements TelegramRuntimeSdk {
     const afterBegin = this.requireBot(botId);
 
     try {
-      await this.guard(adapter.startBot(botId, options));
+      await this.guard(adapter.startBot(botId, options), "startBot", { botId });
     } catch (cause) {
       this.bots.markError(botId);
       this.notifyBotState(botId, BotLifecycle.Error, afterBegin.status);
@@ -110,6 +131,7 @@ export class RuntimeManager implements TelegramRuntimeSdk {
     }
 
     this.bots.completeStart(botId);
+    this.logger.info("bot started", { botId });
     this.notifyBotState(botId, BotLifecycle.Started, BotLifecycle.Starting);
   }
 
@@ -118,6 +140,7 @@ export class RuntimeManager implements TelegramRuntimeSdk {
     validateOperationOptions(options);
     const rec = this.requireBot(botId);
     if (rec.status === BotLifecycle.Stopped) {
+      this.logger.warn("stopBot skipped because bot is already stopped", { botId });
       return;
     }
 
@@ -126,6 +149,7 @@ export class RuntimeManager implements TelegramRuntimeSdk {
     if (rec.status === BotLifecycle.Registered) {
       const previousBeforeStop = rec.status;
       this.bots.beginStop(botId);
+      this.logger.info("bot stopped from registered state", { botId });
       this.notifyBotState(botId, BotLifecycle.Stopped, previousBeforeStop);
       return;
     }
@@ -138,7 +162,7 @@ export class RuntimeManager implements TelegramRuntimeSdk {
     }
 
     try {
-      await this.guard(adapter.stopBot(botId, options));
+      await this.guard(adapter.stopBot(botId, options), "stopBot", { botId });
     } catch (cause) {
       this.bots.markError(botId);
       this.notifyBotState(botId, BotLifecycle.Error, mid.status);
@@ -146,6 +170,7 @@ export class RuntimeManager implements TelegramRuntimeSdk {
     }
 
     this.bots.completeStop(botId);
+    this.logger.info("bot stopped", { botId });
     this.notifyBotState(botId, BotLifecycle.Stopped, BotLifecycle.Stopping);
   }
 
@@ -159,6 +184,11 @@ export class RuntimeManager implements TelegramRuntimeSdk {
     this.subscriptions.register(input);
     const adapter = this.adapterForBot(input.botId);
     const bindingId = input.bindingId;
+    this.logger.debug("registerSubscription requested", {
+      bindingId,
+      botId: input.botId,
+      hasFilters: Boolean(input.filters?.textIncludes?.length),
+    });
     const forward = (event: IncomingMessageEvent) => {
       const binding = this.subscriptions.get(bindingId);
       if (!binding) {
@@ -171,11 +201,18 @@ export class RuntimeManager implements TelegramRuntimeSdk {
     };
 
     try {
-      await this.guard(adapter.bindIncomingMessages(input, forward, options));
+      await this.guard(adapter.bindIncomingMessages(input, forward, options), "bindIncomingMessages", {
+        botId: input.botId,
+        bindingId,
+      });
     } catch (cause) {
       this.subscriptions.unregister(input.bindingId);
       throw cause;
     }
+    this.logger.info("subscription registered", {
+      bindingId: input.bindingId,
+      botId: input.botId,
+    });
   }
 
   async unregisterSubscription(bindingId: string, options?: OperationOptions): Promise<void> {
@@ -189,8 +226,12 @@ export class RuntimeManager implements TelegramRuntimeSdk {
     }
 
     const adapter = this.adapterForBot(binding.botId);
-    await this.guard(adapter.unbindIncomingMessages(bindingId, options));
+    await this.guard(adapter.unbindIncomingMessages(bindingId, options), "unbindIncomingMessages", {
+      botId: binding.botId,
+      bindingId,
+    });
     this.subscriptions.unregister(bindingId);
+    this.logger.info("subscription unregistered", { bindingId, botId: binding.botId });
   }
 
   async sendMessage(
@@ -201,7 +242,20 @@ export class RuntimeManager implements TelegramRuntimeSdk {
     validateOperationOptions(options);
     this.assertBotStarted(input.botId);
     const adapter = this.adapterForBot(input.botId);
-    return this.guard(adapter.sendMessage(input, options));
+    this.logger.debug("sendMessage requested", {
+      botId: input.botId,
+      hasTopicId: input.topicId !== undefined,
+      parseMode: input.parseMode,
+    });
+    const result = await this.guard(adapter.sendMessage(input, options), "sendMessage", {
+      botId: input.botId,
+    });
+    this.logger.info("message sent", {
+      botId: result.botId,
+      chatId: result.chatId,
+      messageId: result.messageId,
+    });
+    return result;
   }
 
   onMessage(handler: MessageHandler): UnsubscribeFn {
@@ -258,6 +312,11 @@ export class RuntimeManager implements TelegramRuntimeSdk {
     status: BotLifecycleStatus,
     previousStatus: BotLifecycleStatus | undefined,
   ): void {
+    this.logger.debug("bot state changed", {
+      botId,
+      status,
+      previousStatus,
+    });
     this.bus.emitBotStateChange({
       botId,
       status,
@@ -266,11 +325,22 @@ export class RuntimeManager implements TelegramRuntimeSdk {
     });
   }
 
-  private async guard<T>(promise: Promise<T>): Promise<T> {
+  private async guard<T>(
+    promise: Promise<T>,
+    operation: string,
+    meta?: Readonly<Record<string, unknown>>,
+  ): Promise<T> {
     try {
       return await promise;
     } catch (cause) {
-      throw mapUnknownToSdkError(cause);
+      const mapped = mapUnknownToSdkError(cause);
+      this.logger.error("runtime operation failed", {
+        operation,
+        code: mapped.code,
+        ...meta,
+      });
+      this.bus.emitError(mapped);
+      throw mapped;
     }
   }
 }

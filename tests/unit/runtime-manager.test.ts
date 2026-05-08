@@ -6,6 +6,7 @@ import type {
   RegisterBotInput,
   RegisterSubscriptionInput,
 } from "../../src/contracts/operations.js";
+import type { Logger } from "../../src/index.js";
 import { BotRegistry } from "../../src/core/bot-registry.js";
 import { SubscriptionRegistry } from "../../src/core/subscription-registry.js";
 import {
@@ -72,6 +73,15 @@ function createMockAdapter(): {
   };
 }
 
+function createMockLogger(): Logger {
+  return {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  };
+}
+
 function resolverFor(adapter: TelegramProviderAdapter): TelegramAdapterResolver {
   return {
     resolve: () => adapter,
@@ -96,6 +106,45 @@ describe("RuntimeManager (TT-015)", () => {
     await mgr.unregisterBot("bot-1");
     expect(adapter.unregisterBot).toHaveBeenCalledTimes(1);
     expect(adapter.cleanupBot).toHaveBeenCalledTimes(1);
+  });
+
+  it("supports injected logger and records key flow events", async () => {
+    const { adapter } = createMockAdapter();
+    const logger = createMockLogger();
+    const mgr = new RuntimeManager(resolverFor(adapter), { logger });
+
+    await mgr.registerBot(registerInput("logs"));
+    await mgr.startBot("logs");
+    await mgr.registerSubscription({ bindingId: "logs-b", botId: "logs", chatId: 1 });
+    await mgr.sendMessage({ botId: "logs", chatId: 1, text: "hello logs" });
+    await mgr.unregisterSubscription("logs-b");
+    await mgr.stopBot("logs");
+    await mgr.unregisterBot("logs");
+
+    expect(logger.debug).toHaveBeenCalled();
+    expect(logger.info).toHaveBeenCalled();
+    expect(logger.warn).not.toHaveBeenCalled();
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it("logs and emits runtime error when adapter call fails", async () => {
+    const { adapter } = createMockAdapter();
+    const logger = createMockLogger();
+    adapter.startBot = vi.fn(async () => {
+      throw new Error("boom start");
+    });
+    const mgr = new RuntimeManager(resolverFor(adapter), { logger });
+    const onError = vi.fn();
+    mgr.onError(onError);
+
+    await mgr.registerBot(registerInput("err-log"));
+    await expect(mgr.startBot("err-log")).rejects.toBeInstanceOf(TransientNetworkError);
+
+    expect(logger.error).toHaveBeenCalledWith(
+      "runtime operation failed",
+      expect.objectContaining({ operation: "startBot", code: "TRANSIENT_NETWORK", botId: "err-log" }),
+    );
+    expect(onError).toHaveBeenCalledWith(expect.any(TransientNetworkError));
   });
 
   it("rolls back bot registry when adapter.registerBot throws, then register works", async () => {

@@ -94,6 +94,24 @@ await runtime.sendMessage({
 });
 ```
 
+## Observability (TT-017)
+
+`RuntimeManager` accepts an optional injected logger (`debug/info/warn/error`) through `RuntimeManagerDeps`.
+If omitted, the SDK uses `NoopLogger`, so behavior is unchanged.
+
+```ts
+import { createRuntimeManager, type Logger } from "@your-scope/telegram-adapter-kit";
+
+const logger: Logger = {
+  debug: (message, meta) => console.debug(message, meta),
+  info: (message, meta) => console.info(message, meta),
+  warn: (message, meta) => console.warn(message, meta),
+  error: (message, meta) => console.error(message, meta),
+};
+
+const runtime = createRuntimeManager(resolver, { logger });
+```
+
 ## Documentation
 
 | Document                                                 | Purpose                                                                                                                                                                                                                                                                                                                                                                                 |
