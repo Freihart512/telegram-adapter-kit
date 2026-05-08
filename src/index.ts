@@ -31,6 +31,8 @@ export { SubscriptionRegistry } from "./core/subscription-registry.js";
 export type { SubscriptionBinding } from "./core/subscription-registry.js";
 export { RuntimeManager, createRuntimeManager } from "./core/runtime-manager.js";
 export type { RuntimeManagerDeps } from "./core/runtime-manager.js";
+export { NoopLogger } from "./observability/noop-logger.js";
+export type { Logger } from "./observability/logger.js";
 export {
   MAX_MESSAGE_TEXT_LENGTH,
   validateBindingId,
