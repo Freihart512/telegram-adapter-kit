@@ -23,7 +23,7 @@ import {
 
 const credentials = {
   kind: "botApi" as const,
-  botToken: "stub-token",
+  botToken: "12345678:abcdefghijklmnopqrstuvwxyzABCDEF",
 };
 
 const registerInput = (botId: string): RegisterBotInput => ({
@@ -425,5 +425,147 @@ describe("RuntimeManager (TT-015)", () => {
     expect(onState).toHaveBeenLastCalledWith(
       expect.objectContaining({ botId: "err", status: "error", previousStatus: "starting" }),
     );
+  });
+
+  describe("input validation (TT-016)", () => {
+    it("registerBot rejects invalid input before calling adapter", async () => {
+      const { adapter } = createMockAdapter();
+      const mgr = new RuntimeManager(resolverFor(adapter));
+
+      await expect(
+        mgr.registerBot({ botId: "", credentials } as RegisterBotInput),
+      ).rejects.toBeInstanceOf(ValidationError);
+      await expect(
+        mgr.registerBot({
+          botId: "bot",
+          credentials: { kind: "botApi", botToken: "stub" },
+        } as RegisterBotInput),
+      ).rejects.toBeInstanceOf(ValidationError);
+
+      expect(adapter.registerBot).not.toHaveBeenCalled();
+    });
+
+    it("startBot, stopBot and unregisterBot reject empty botId", async () => {
+      const { adapter } = createMockAdapter();
+      const mgr = new RuntimeManager(resolverFor(adapter));
+
+      await expect(mgr.startBot("")).rejects.toBeInstanceOf(ValidationError);
+      await expect(mgr.stopBot("")).rejects.toBeInstanceOf(ValidationError);
+      await expect(mgr.unregisterBot("")).rejects.toBeInstanceOf(ValidationError);
+      expect(adapter.startBot).not.toHaveBeenCalled();
+      expect(adapter.stopBot).not.toHaveBeenCalled();
+      expect(adapter.unregisterBot).not.toHaveBeenCalled();
+    });
+
+    it("registerSubscription rejects invalid binding before calling adapter", async () => {
+      const { adapter } = createMockAdapter();
+      const mgr = new RuntimeManager(resolverFor(adapter));
+
+      await mgr.registerBot(registerInput("v"));
+      await mgr.startBot("v");
+
+      await expect(
+        mgr.registerSubscription({ bindingId: "", botId: "v", chatId: 1 }),
+      ).rejects.toBeInstanceOf(ValidationError);
+      await expect(
+        mgr.registerSubscription({ bindingId: "b", botId: "v", chatId: 0 }),
+      ).rejects.toBeInstanceOf(ValidationError);
+      await expect(
+        mgr.registerSubscription({ bindingId: "b", botId: "v", chatId: 1, topicId: 0 }),
+      ).rejects.toBeInstanceOf(ValidationError);
+
+      expect(adapter.bindIncomingMessages).not.toHaveBeenCalled();
+    });
+
+    it("unregisterSubscription rejects empty bindingId", async () => {
+      const { adapter } = createMockAdapter();
+      const mgr = new RuntimeManager(resolverFor(adapter));
+      await expect(mgr.unregisterSubscription("")).rejects.toBeInstanceOf(ValidationError);
+      expect(adapter.unbindIncomingMessages).not.toHaveBeenCalled();
+    });
+
+    it("sendMessage rejects invalid payload before calling adapter", async () => {
+      const { adapter } = createMockAdapter();
+      const mgr = new RuntimeManager(resolverFor(adapter));
+
+      await mgr.registerBot(registerInput("s"));
+      await mgr.startBot("s");
+
+      await expect(mgr.sendMessage({ botId: "s", chatId: 1, text: "" })).rejects.toBeInstanceOf(
+        ValidationError,
+      );
+      await expect(mgr.sendMessage({ botId: "", chatId: 1, text: "hi" })).rejects.toBeInstanceOf(
+        ValidationError,
+      );
+
+      expect(adapter.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it("on* handlers reject non-functions", () => {
+      const { adapter } = createMockAdapter();
+      const mgr = new RuntimeManager(resolverFor(adapter));
+
+      expect(() => mgr.onMessage("nope" as unknown as () => void)).toThrow(ValidationError);
+      expect(() => mgr.onError(null as unknown as () => void)).toThrow(ValidationError);
+      expect(() => mgr.onBotStateChange(undefined as unknown as () => void)).toThrow(
+        ValidationError,
+      );
+    });
+
+    it("public methods reject malformed OperationOptions", async () => {
+      const { adapter } = createMockAdapter();
+      const mgr = new RuntimeManager(resolverFor(adapter));
+
+      await expect(mgr.registerBot(registerInput("opt"), { timeoutMs: -1 })).rejects.toBeInstanceOf(
+        ValidationError,
+      );
+      await expect(
+        mgr.startBot("opt", { signal: "bad" as unknown as AbortSignal }),
+      ).rejects.toBeInstanceOf(ValidationError);
+
+      expect(adapter.registerBot).not.toHaveBeenCalled();
+      expect(adapter.startBot).not.toHaveBeenCalled();
+    });
+
+    it("filter is taken from the registry snapshot, not from the caller's mutable input", async () => {
+      const { adapter, getInbound } = createMockAdapter();
+      const mgr = new RuntimeManager(resolverFor(adapter));
+      const onMessage = vi.fn();
+      mgr.onMessage(onMessage);
+
+      await mgr.registerBot(registerInput("filter"));
+      await mgr.startBot("filter");
+
+      const input = {
+        bindingId: "f1",
+        botId: "filter",
+        chatId: 1,
+        filters: { textIncludes: ["ping"] },
+      };
+      await mgr.registerSubscription(input);
+      input.filters.textIncludes.push("pong");
+
+      const deliver = getInbound("f1")!;
+
+      await deliver({
+        botId: "filter",
+        chatId: "1",
+        messageId: 1,
+        text: "pong",
+        date: new Date(),
+        raw: {},
+      });
+      expect(onMessage).not.toHaveBeenCalled();
+
+      await deliver({
+        botId: "filter",
+        chatId: "1",
+        messageId: 2,
+        text: "ping!",
+        date: new Date(),
+        raw: {},
+      });
+      expect(onMessage).toHaveBeenCalledTimes(1);
+    });
   });
 });

@@ -21,7 +21,16 @@ import { mapUnknownToSdkError } from "../errors/map-external.js";
 import { SubscriptionNotFoundError } from "../errors/subscription-not-found-error.js";
 import { BotLifecycle, BotRegistry } from "./bot-registry.js";
 import { EventBus } from "./event-bus.js";
-import { SubscriptionRegistry } from "./subscription-registry.js";
+import { SubscriptionRegistry, type SubscriptionBinding } from "./subscription-registry.js";
+import {
+  validateBindingId,
+  validateBotId,
+  validateHandler,
+  validateOperationOptions,
+  validateRegisterBotInput,
+  validateRegisterSubscriptionInput,
+  validateSendMessageInput,
+} from "./validators.js";
 
 export type RuntimeManagerDeps = Readonly<{
   botRegistry?: BotRegistry;
@@ -47,6 +56,8 @@ export class RuntimeManager implements TelegramRuntimeSdk {
   }
 
   async registerBot(input: RegisterBotInput, options?: OperationOptions): Promise<void> {
+    validateRegisterBotInput(input);
+    validateOperationOptions(options);
     const adapter = this.adapterForRegister(input);
 
     this.bots.register(input);
@@ -60,6 +71,8 @@ export class RuntimeManager implements TelegramRuntimeSdk {
   }
 
   async unregisterBot(botId: string, options?: OperationOptions): Promise<void> {
+    validateBotId(botId);
+    validateOperationOptions(options);
     this.requireBot(botId);
     const adapter = this.adapterForBot(botId);
     const bindings = this.subscriptions.listByBotId(botId);
@@ -75,6 +88,8 @@ export class RuntimeManager implements TelegramRuntimeSdk {
   }
 
   async startBot(botId: string, options?: OperationOptions): Promise<void> {
+    validateBotId(botId);
+    validateOperationOptions(options);
     const rec = this.requireBot(botId);
     if (rec.status === BotLifecycle.Started) {
       return;
@@ -99,6 +114,8 @@ export class RuntimeManager implements TelegramRuntimeSdk {
   }
 
   async stopBot(botId: string, options?: OperationOptions): Promise<void> {
+    validateBotId(botId);
+    validateOperationOptions(options);
     const rec = this.requireBot(botId);
     if (rec.status === BotLifecycle.Stopped) {
       return;
@@ -136,11 +153,18 @@ export class RuntimeManager implements TelegramRuntimeSdk {
     input: RegisterSubscriptionInput,
     options?: OperationOptions,
   ): Promise<void> {
+    validateRegisterSubscriptionInput(input);
+    validateOperationOptions(options);
     this.assertBotStarted(input.botId);
     this.subscriptions.register(input);
     const adapter = this.adapterForBot(input.botId);
+    const bindingId = input.bindingId;
     const forward = (event: IncomingMessageEvent) => {
-      if (!this.passesFilter(input, event)) {
+      const binding = this.subscriptions.get(bindingId);
+      if (!binding) {
+        return;
+      }
+      if (!this.passesFilter(binding, event)) {
         return;
       }
       this.bus.emitMessage(event);
@@ -155,6 +179,8 @@ export class RuntimeManager implements TelegramRuntimeSdk {
   }
 
   async unregisterSubscription(bindingId: string, options?: OperationOptions): Promise<void> {
+    validateBindingId(bindingId);
+    validateOperationOptions(options);
     const binding = this.subscriptions.get(bindingId);
     if (!binding) {
       throw new SubscriptionNotFoundError(`Subscription not found: ${bindingId}`, {
@@ -171,20 +197,25 @@ export class RuntimeManager implements TelegramRuntimeSdk {
     input: SendMessageInput,
     options?: OperationOptions,
   ): Promise<SendMessageResult> {
+    validateSendMessageInput(input);
+    validateOperationOptions(options);
     this.assertBotStarted(input.botId);
     const adapter = this.adapterForBot(input.botId);
     return this.guard(adapter.sendMessage(input, options));
   }
 
   onMessage(handler: MessageHandler): UnsubscribeFn {
+    validateHandler<MessageHandler>(handler, "onMessage handler");
     return this.bus.onMessage(handler);
   }
 
   onError(handler: ErrorHandler): UnsubscribeFn {
+    validateHandler<ErrorHandler>(handler, "onError handler");
     return this.bus.onError(handler);
   }
 
   onBotStateChange(handler: BotStateHandler): UnsubscribeFn {
+    validateHandler<BotStateHandler>(handler, "onBotStateChange handler");
     return this.bus.onBotStateChange(handler);
   }
 
@@ -213,7 +244,7 @@ export class RuntimeManager implements TelegramRuntimeSdk {
     }
   }
 
-  private passesFilter(binding: RegisterSubscriptionInput, event: IncomingMessageEvent): boolean {
+  private passesFilter(binding: SubscriptionBinding, event: IncomingMessageEvent): boolean {
     const includes = binding.filters?.textIncludes;
     if (!includes?.length) {
       return true;

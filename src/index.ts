@@ -31,6 +31,19 @@ export { SubscriptionRegistry } from "./core/subscription-registry.js";
 export type { SubscriptionBinding } from "./core/subscription-registry.js";
 export { RuntimeManager, createRuntimeManager } from "./core/runtime-manager.js";
 export type { RuntimeManagerDeps } from "./core/runtime-manager.js";
+export {
+  MAX_MESSAGE_TEXT_LENGTH,
+  validateBindingId,
+  validateBotId,
+  validateChatId,
+  validateCredentials,
+  validateHandler,
+  validateOperationOptions,
+  validateRegisterBotInput,
+  validateRegisterSubscriptionInput,
+  validateSendMessageInput,
+  validateTopicId,
+} from "./core/validators.js";
 
 export type {
   BotApiCredentials,
