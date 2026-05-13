@@ -6,6 +6,7 @@ import type {
   OperationOptions,
   RegisterBotInput,
   RegisterSubscriptionInput,
+  SendMessageInput,
   SendMessageResult,
 } from "../../../contracts/operations.js";
 import { BotAlreadyExistsError } from "../../../errors/bot-already-exists-error.js";
@@ -13,6 +14,7 @@ import { BotNotFoundError } from "../../../errors/bot-not-found-error.js";
 import { BotNotStartedError } from "../../../errors/bot-not-started-error.js";
 import { CapabilityNotSupportedError } from "../../../errors/capability-not-supported-error.js";
 import { LifecycleConflictError } from "../../../errors/lifecycle-conflict-error.js";
+import { SendMessageError } from "../../../errors/send-message-error.js";
 import { SubscriptionAlreadyExistsError } from "../../../errors/subscription-already-exists-error.js";
 import { SubscriptionNotFoundError } from "../../../errors/subscription-not-found-error.js";
 import { mapUnknownToSdkError } from "../../../errors/map-external.js";
@@ -33,12 +35,28 @@ export type GramJsRawEvent = {
 
 export type GramJsEventHandler = (event: GramJsRawEvent) => void;
 
+/** Parameters for the low-level GramJS sendMessage call. */
+export type GramJsSendMessageParams = {
+  peer: bigint | number | string;
+  message: string;
+  parseMode?: "markdown" | "html";
+  replyTo?: number;
+  linkPreview?: boolean;
+};
+
+/** Raw result returned by the GramJS sendMessage call. */
+export type GramJsSendMessageRawResult = {
+  id?: number;
+  date?: number;
+};
+
 export type GramJsMtprotoClient = {
   connect(): Promise<void>;
   disconnect(): Promise<void>;
   destroy?(): Promise<void> | void;
   addEventHandler?(handler: GramJsEventHandler): void;
   removeEventHandler?(handler: GramJsEventHandler): void;
+  sendMessage?(params: GramJsSendMessageParams): Promise<GramJsSendMessageRawResult>;
 };
 
 export type GramJsMtprotoClientFactory = (
@@ -65,8 +83,8 @@ const DEFAULT_CAPABILITIES: TelegramAdapterCapabilities = Object.freeze({
 });
 
 /**
- * Base MTProto adapter for lifecycle and cleanup (TT-021).
- * Incoming bindings and send operations are completed in follow-up tasks.
+ * MTProto adapter: lifecycle (TT-021), incoming bindings (TT-022),
+ * and outgoing messages (TT-023).
  */
 export class GramJsMtprotoAdapter implements TelegramProviderAdapter {
   readonly kind = "mtproto" as const;
@@ -165,10 +183,57 @@ export class GramJsMtprotoAdapter implements TelegramProviderAdapter {
     }
   }
 
-  async sendMessage(): Promise<SendMessageResult> {
-    throw new CapabilityNotSupportedError("sendMessage is not available until TT-023", {
-      meta: { runtimeKind: this.kind },
-    });
+  async sendMessage(input: SendMessageInput, options?: OperationOptions): Promise<SendMessageResult> {
+    void options;
+    const rec = this.require(input.botId);
+    if (rec.status !== BotLifecycle.Started || !rec.client) {
+      throw new BotNotStartedError("Bot must be started before sending messages", {
+        meta: { botId: input.botId, chatId: String(input.chatId) },
+      });
+    }
+    if (!rec.client.sendMessage) {
+      throw new CapabilityNotSupportedError("Client does not support sendMessage", {
+        meta: { botId: input.botId },
+      });
+    }
+
+    const params: GramJsSendMessageParams = {
+      peer: input.chatId,
+      message: input.text,
+      parseMode: input.parseMode,
+      replyTo: input.replyToMessageId,
+      linkPreview: input.disableLinkPreview === true ? false : undefined,
+    };
+
+    try {
+      const raw = await rec.client.sendMessage(params);
+      const result: SendMessageResult = {
+        botId: input.botId,
+        chatId: String(input.chatId),
+        messageId: raw.id ?? 0,
+        date: raw.date ? new Date(raw.date * 1000) : undefined,
+        raw,
+      };
+      this.logger.info("mtproto message sent", {
+        botId: input.botId,
+        chatId: String(input.chatId),
+        messageId: result.messageId,
+      });
+      return result;
+    } catch (cause) {
+      const mapped = cause instanceof SendMessageError
+        ? cause
+        : new SendMessageError("Failed to send message", {
+            cause,
+            meta: { botId: input.botId, chatId: String(input.chatId) },
+          });
+      this.logger.error("mtproto message send failed", {
+        botId: input.botId,
+        chatId: String(input.chatId),
+        error: mapped.message,
+      });
+      throw mapped;
+    }
   }
 
   async bindIncomingMessages(

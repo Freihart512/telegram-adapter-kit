@@ -37,6 +37,8 @@ export type {
   GramJsMtprotoClient,
   GramJsMtprotoClientFactory,
   GramJsRawEvent,
+  GramJsSendMessageParams,
+  GramJsSendMessageRawResult,
 } from "./adapters/telegram/mtproto/gramjs-adapter.js";
 export { NoopLogger } from "./observability/noop-logger.js";
 export type { Logger } from "./observability/logger.js";
