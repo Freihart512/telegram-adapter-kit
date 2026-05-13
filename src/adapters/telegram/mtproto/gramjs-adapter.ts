@@ -9,6 +9,8 @@ import type {
   SendMessageInput,
   SendMessageResult,
 } from "../../../contracts/operations.js";
+import { BotLifecycle } from "../../../core/bot-registry.js";
+import { validateSendMessageInput } from "../../../core/validators.js";
 import { BotAlreadyExistsError } from "../../../errors/bot-already-exists-error.js";
 import { BotNotFoundError } from "../../../errors/bot-not-found-error.js";
 import { BotNotStartedError } from "../../../errors/bot-not-started-error.js";
@@ -20,7 +22,6 @@ import { SubscriptionNotFoundError } from "../../../errors/subscription-not-foun
 import { mapUnknownToSdkError } from "../../../errors/map-external.js";
 import type { Logger } from "../../../observability/logger.js";
 import { NoopLogger } from "../../../observability/noop-logger.js";
-import { BotLifecycle } from "../../../core/bot-registry.js";
 
 /** Raw GramJS event payload passed to event handlers. */
 export type GramJsRawEvent = {
@@ -42,6 +43,8 @@ export type GramJsSendMessageParams = {
   parseMode?: "markdown" | "html";
   replyTo?: number;
   linkPreview?: boolean;
+  /** Forum topic id (supergroups/channels with topics); maps to provider thread semantics. */
+  topicId?: number;
 };
 
 /** Raw result returned by the GramJS sendMessage call. */
@@ -77,14 +80,14 @@ type AdapterRecord = {
 };
 
 const DEFAULT_CAPABILITIES: TelegramAdapterCapabilities = Object.freeze({
-  supportsOutgoingForumTopics: false,
+  supportsOutgoingForumTopics: true,
   supportsIncomingForumTopics: false,
   supportsDynamicSubscriptions: true,
 });
 
 /**
  * MTProto adapter: lifecycle (TT-021), incoming bindings (TT-022),
- * and outgoing messages (TT-023).
+ * outgoing messages (TT-023), and forum topic sends (TT-024).
  */
 export class GramJsMtprotoAdapter implements TelegramProviderAdapter {
   readonly kind = "mtproto" as const;
@@ -183,8 +186,22 @@ export class GramJsMtprotoAdapter implements TelegramProviderAdapter {
     }
   }
 
+  /**
+   * Sends a message to a chat or channel. When `input.topicId` is set, forwards it to the client
+   * as `GramJsSendMessageParams.topicId` (forum thread). Requires `capabilities.supportsOutgoingForumTopics`
+   * for topic sends; override capabilities in constructor deps to disable.
+   */
   async sendMessage(input: SendMessageInput, options?: OperationOptions): Promise<SendMessageResult> {
     void options;
+    validateSendMessageInput(input);
+
+    if (input.topicId !== undefined && !this.capabilities.supportsOutgoingForumTopics) {
+      throw new CapabilityNotSupportedError(
+        "Outgoing forum topics are disabled for this adapter instance",
+        { meta: { botId: input.botId, topicId: input.topicId } },
+      );
+    }
+
     const rec = this.require(input.botId);
     if (rec.status !== BotLifecycle.Started || !rec.client) {
       throw new BotNotStartedError("Bot must be started before sending messages", {
@@ -203,6 +220,7 @@ export class GramJsMtprotoAdapter implements TelegramProviderAdapter {
       parseMode: input.parseMode,
       replyTo: input.replyToMessageId,
       linkPreview: input.disableLinkPreview === true ? false : undefined,
+      ...(input.topicId !== undefined ? { topicId: input.topicId } : {}),
     };
 
     try {
@@ -218,18 +236,21 @@ export class GramJsMtprotoAdapter implements TelegramProviderAdapter {
         botId: input.botId,
         chatId: String(input.chatId),
         messageId: result.messageId,
+        topicId: input.topicId,
       });
       return result;
     } catch (cause) {
-      const mapped = cause instanceof SendMessageError
-        ? cause
-        : new SendMessageError("Failed to send message", {
-            cause,
-            meta: { botId: input.botId, chatId: String(input.chatId) },
-          });
+      const mapped =
+        cause instanceof SendMessageError
+          ? cause
+          : new SendMessageError("Failed to send message", {
+              cause,
+              meta: { botId: input.botId, chatId: String(input.chatId), topicId: input.topicId },
+            });
       this.logger.error("mtproto message send failed", {
         botId: input.botId,
         chatId: String(input.chatId),
+        topicId: input.topicId,
         error: mapped.message,
       });
       throw mapped;

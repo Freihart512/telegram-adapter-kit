@@ -220,3 +220,59 @@ describe("GramJsMtprotoAdapter sendMessage (TT-023)", () => {
     expect(result.date).toBeUndefined();
   });
 });
+
+describe("GramJsMtprotoAdapter sendMessage forum topics (TT-024)", () => {
+  it("passes topicId to client when set", async () => {
+    const client = createMockClient({ id: 2, date: 1700000000 });
+    const adapter = new GramJsMtprotoAdapter(() => client);
+    await adapter.registerBot(mtprotoInput("b1"));
+    await adapter.startBot("b1");
+
+    await adapter.sendMessage(sendInput("b1", { topicId: 7 }));
+
+    expect(client.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ topicId: 7, peer: 100n, message: "hello" }),
+    );
+  });
+
+  it("rejects topic send when adapter capabilities disable outgoing forum topics", async () => {
+    const client = createMockClient();
+    const adapter = new GramJsMtprotoAdapter(() => client, {
+      capabilities: {
+        supportsOutgoingForumTopics: false,
+        supportsIncomingForumTopics: false,
+        supportsDynamicSubscriptions: true,
+      },
+    });
+    await adapter.registerBot(mtprotoInput("b1"));
+    await adapter.startBot("b1");
+
+    await expect(
+      adapter.sendMessage(sendInput("b1", { topicId: 3 })),
+    ).rejects.toBeInstanceOf(CapabilityNotSupportedError);
+    expect(client.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("maps provider failure for topic send to SendMessageError", async () => {
+    const client = createMockClient(undefined, new Error("TOPIC_NOT_SUPPORTED"));
+    const adapter = new GramJsMtprotoAdapter(() => client);
+    await adapter.registerBot(mtprotoInput("b1"));
+    await adapter.startBot("b1");
+
+    await expect(
+      adapter.sendMessage(sendInput("b1", { topicId: 99 })),
+    ).rejects.toBeInstanceOf(SendMessageError);
+  });
+
+  it("send without topicId does not pass topicId to client (regression)", async () => {
+    const client = createMockClient();
+    const adapter = new GramJsMtprotoAdapter(() => client);
+    await adapter.registerBot(mtprotoInput("b1"));
+    await adapter.startBot("b1");
+
+    await adapter.sendMessage(sendInput("b1"));
+
+    const call = client.sendMessage.mock.calls[0]![0] as Record<string, unknown>;
+    expect(call.topicId).toBeUndefined();
+  });
+});
