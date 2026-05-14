@@ -9,6 +9,7 @@ import {
   CapabilityNotSupportedError,
   GramJsMtprotoAdapter,
   SendMessageError,
+  TransientNetworkError,
 } from "../../src/index.js";
 import type { GramJsMtprotoClient } from "../../src/adapters/telegram/mtproto/gramjs-adapter.js";
 
@@ -165,7 +166,7 @@ describe("GramJsMtprotoAdapter sendMessage (TT-023)", () => {
     ).rejects.toBeInstanceOf(CapabilityNotSupportedError);
   });
 
-  it("wraps client send failure in SendMessageError", async () => {
+  it("wraps generic client send failure via mapper (TransientNetworkError)", async () => {
     const client = createMockClient(undefined, new Error("permission denied"));
     const adapter = new GramJsMtprotoAdapter(() => client);
     await adapter.registerBot(mtprotoInput("b1"));
@@ -173,9 +174,8 @@ describe("GramJsMtprotoAdapter sendMessage (TT-023)", () => {
 
     const err = await adapter.sendMessage(sendInput("b1")).catch((e: unknown) => e);
 
-    expect(err).toBeInstanceOf(SendMessageError);
-    expect((err as SendMessageError).message).toBe("Failed to send message");
-    expect((err as SendMessageError).cause).toBeInstanceOf(Error);
+    expect(err).toBeInstanceOf(TransientNetworkError);
+    expect((err as TransientNetworkError).cause).toBeInstanceOf(Error);
   });
 
   it("logs success on send", async () => {

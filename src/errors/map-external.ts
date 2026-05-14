@@ -4,7 +4,7 @@ import { ValidationError } from "./validation-error.js";
 
 /**
  * Normalizes unknown throws into a typed {@link TelegramSdkError} for `onError` and logging.
- * Provider-specific mapping (GramJS, Bot API) builds on this in adapter tasks.
+ * GramJS-specific RPC mapping is implemented by `mapGramJsProviderError` (TT-025).
  */
 export function mapUnknownToSdkError(error: unknown): TelegramSdkError {
   if (error instanceof TelegramSdkError) {
