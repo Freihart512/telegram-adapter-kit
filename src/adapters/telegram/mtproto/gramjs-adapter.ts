@@ -16,10 +16,9 @@ import { BotNotFoundError } from "../../../errors/bot-not-found-error.js";
 import { BotNotStartedError } from "../../../errors/bot-not-started-error.js";
 import { CapabilityNotSupportedError } from "../../../errors/capability-not-supported-error.js";
 import { LifecycleConflictError } from "../../../errors/lifecycle-conflict-error.js";
-import { SendMessageError } from "../../../errors/send-message-error.js";
 import { SubscriptionAlreadyExistsError } from "../../../errors/subscription-already-exists-error.js";
 import { SubscriptionNotFoundError } from "../../../errors/subscription-not-found-error.js";
-import { mapUnknownToSdkError } from "../../../errors/map-external.js";
+import { mapGramJsProviderError } from "./map-gramjs-error.js";
 import type { Logger } from "../../../observability/logger.js";
 import { NoopLogger } from "../../../observability/noop-logger.js";
 
@@ -161,7 +160,7 @@ export class GramJsMtprotoAdapter implements TelegramProviderAdapter {
           // Best-effort cleanup when connect fails partway.
         }
       }
-      throw mapUnknownToSdkError(cause);
+      throw mapGramJsProviderError(cause, { operation: "startBot", botId });
     }
   }
 
@@ -182,7 +181,7 @@ export class GramJsMtprotoAdapter implements TelegramProviderAdapter {
       rec.client = undefined;
       this.logger.info("mtproto client stopped", { botId });
     } catch (cause) {
-      throw mapUnknownToSdkError(cause);
+      throw mapGramJsProviderError(cause, { operation: "stopBot", botId });
     }
   }
 
@@ -240,13 +239,12 @@ export class GramJsMtprotoAdapter implements TelegramProviderAdapter {
       });
       return result;
     } catch (cause) {
-      const mapped =
-        cause instanceof SendMessageError
-          ? cause
-          : new SendMessageError("Failed to send message", {
-              cause,
-              meta: { botId: input.botId, chatId: String(input.chatId), topicId: input.topicId },
-            });
+      const mapped = mapGramJsProviderError(cause, {
+        operation: "sendMessage",
+        botId: input.botId,
+        chatId: String(input.chatId),
+        topicId: input.topicId,
+      });
       this.logger.error("mtproto message send failed", {
         botId: input.botId,
         chatId: String(input.chatId),
@@ -414,7 +412,7 @@ export class GramJsMtprotoAdapter implements TelegramProviderAdapter {
     try {
       await client.disconnect();
     } catch (cause) {
-      throw mapUnknownToSdkError(cause);
+      throw mapGramJsProviderError(cause, { operation: "cleanupBot", botId });
     } finally {
       try {
         await client.destroy?.();

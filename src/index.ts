@@ -40,6 +40,8 @@ export type {
   GramJsSendMessageParams,
   GramJsSendMessageRawResult,
 } from "./adapters/telegram/mtproto/gramjs-adapter.js";
+export type { GramJsErrorMapContext } from "./adapters/telegram/mtproto/map-gramjs-error.js";
+export { mapGramJsProviderError } from "./adapters/telegram/mtproto/map-gramjs-error.js";
 export { NoopLogger } from "./observability/noop-logger.js";
 export type { Logger } from "./observability/logger.js";
 export {
