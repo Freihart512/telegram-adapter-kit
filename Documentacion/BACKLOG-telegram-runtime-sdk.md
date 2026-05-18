@@ -129,6 +129,26 @@ Cobertura: `UC-009`, `UC-005`, `UC-006`, `UC-004`
   - UC: `UC-001`, `UC-002`, `UC-003`, `UC-004`, `UC-007`, `UC-008`
   - Dependencias: `TT-012` a `TT-017`
 
+- `TT-044` Implementar control operacional de operaciones (`withTimeout`, cancelacion en vuelo).
+  - UC: `UC-007`, `UC-008`
+  - Dependencias: `TT-011`, `TT-016`
+  - Entregable: utilidad comun reutilizable por runtime y adapters.
+
+- `TT-046` Definir politica de retry por operacion (excluir o restringir `sendMessage`).
+  - UC: `UC-005`, `UC-006`, `UC-007`
+  - Dependencias: `TT-026`
+  - Entregable: mapa de politica por operacion; `sendMessage` sin retry por defecto antes de integrar timeout en manager.
+
+- `TT-045` Integrar `timeoutMs` y `AbortSignal` en `RuntimeManager` para operaciones criticas.
+  - UC: `UC-001`, `UC-002`, `UC-005`, `UC-006`, `UC-007`
+  - Dependencias: `TT-015`, `TT-026`, `TT-044`, `TT-046`
+  - Entregable: cumplimiento PRD CA-10; `guard()` usa politica por operacion (TT-046), no retry uniforme en `sendMessage`.
+
+- `TT-047` Reconciliar estado del runtime ante timeout o cancelacion en lifecycle.
+  - UC: `UC-001`, `UC-002`, `UC-007`, `UC-008`
+  - Dependencias: `TT-012`, `TT-014`, `TT-039`, `TT-044`, `TT-045`
+  - Entregable: registry consistente y evento de error runtime tras fallo operacional.
+
 ### Detalle de Ejecucion - Foundation del Repositorio
 
 #### TT-001 - Inicializar repo del paquete
@@ -309,18 +329,18 @@ Cobertura: `UC-009`, `UC-005`, `UC-006`, `UC-004`
   - UC: `UC-007`
   - Dependencias: `TT-011`, `TT-021`, `TT-023`, `TT-024`
 
-- `TT-026` Implementar retry/backoff configurable, timeoutMs y cancelacion operacional para errores transitorios.
+- `TT-026` Implementar retry/backoff configurable para errores transitorios de red/proveedor.
   - UC: `UC-007`, `UC-008`
   - Dependencias: `TT-021` a `TT-025`
 
 - `TT-027` Contract tests de adapters (MTProto y Bot API cuando aplique).
   - UC: `UC-004`, `UC-005`, `UC-006`, `UC-007`
-  - Dependencias: `TT-021` a `TT-026`
+  - Dependencias: `TT-021` a `TT-026`, `TT-045` (recomendado)
 
 
 - `TT-028` Implementar `BotApiAdapter` para bots clasicos con `botToken`.
   - UC: `UC-001`, `UC-002`, `UC-003`, `UC-004`, `UC-005`, `UC-006`, `UC-007`
-  - Dependencias: `TT-020`, `TT-025`, `TT-026`
+  - Dependencias: `TT-020`, `TT-025`, `TT-026`, `TT-045`, `TT-046`
 
 - `TT-029` Implementar `TelegramAdapterResolver` para seleccionar adapter interno por `credentials.kind`.
   - UC: `UC-001`, `UC-002`, `UC-005`, `UC-006`, `UC-007`
@@ -602,6 +622,11 @@ Cobertura: `UC-009`, `UC-005`, `UC-006`, `UC-004`
   - UC: `UC-008`, `UC-007`
   - Dependencias: `TT-017`, `TT-021`
 
+- `TT-048` Endurecer politica de retry (maxDelayMs, jitter, presets opcionales).
+  - UC: `UC-007`, `UC-008`
+  - Dependencias: `TT-026`, `TT-046`
+  - Entregable: mitigacion de thundering herd en produccion (sobre base de TT-046).
+
 - `TT-035` Configurar GitHub Actions para PR checks (`pull_request`).
   - UC: `UC-PLT-001`, `UC-009`
   - Entregable: workflow en `.github/workflows/pr-checks.yml` con lint, typecheck, test y build.
@@ -785,7 +810,10 @@ Cobertura: `UC-009`, `UC-005`, `UC-006`, `UC-004`
 #### TT-026 - Implementar retry/backoff configurable
 
 **UC relacionados:** `UC-007`, `UC-008`  
+**Referencias:** TRD §7.8 (retry), PRD Fase 5 (hardening operacional)  
 **Objetivo:** Mejorar resiliencia frente a fallos transitorios de red/proveedor.
+
+**Nota de alcance:** `timeoutMs`, cancelacion operacional en vuelo y reconciliacion de estado quedan en `TT-044`, `TT-045` y `TT-047`. La politica de retry por operacion (p. ej. `sendMessage`) queda en `TT-046` y debe completarse antes o junto con `TT-045`.
 
 **Descripcion detallada**
 - Implementar utilidad de retry con politica configurable:
@@ -809,6 +837,146 @@ Cobertura: `UC-009`, `UC-005`, `UC-006`, `UC-004`
 - Unit tests de estrategia de retry y backoff.
 - Prueba de agotamiento de reintentos.
 - Prueba de bypass en errores no transitorios.
+
+#### TT-044 - Implementar control operacional de operaciones (`withTimeout`, cancelacion en vuelo)
+
+**UC relacionados:** `UC-007`, `UC-008`  
+**Referencias:** PRD §11.3, TRD §7.8, CA-10 (parcial)  
+**Objetivo:** Proveer un wrapper comun que limite duracion y permita cancelacion real durante la ejecucion de una operacion async.
+
+**Descripcion detallada**
+- Crear `src/utils/timeout.ts` (o `operation-control.ts`) con:
+  - `withTimeout<T>(fn, options)` que rechace con `OperationTimeoutError` al superar `timeoutMs`.
+  - Integracion con `AbortSignal`: si `signal.aborted` antes de iniciar, lanzar `OperationCancelledError`.
+  - Cancelacion **durante** `fn()`: competir la promesa de la operacion contra abort (p. ej. `Promise.race` + listener de abort) de forma que la promesa del caller se resuelva/rechace sin esperar indefinidamente.
+  - Limpieza del timer: si `fn()` completa antes de `timeoutMs`, cancelar `clearTimeout` (o equivalente) para evitar fugas y rechazos tardios espurios por `OperationTimeoutError`.
+- Documentar limitacion: la operacion subyacente del provider puede seguir ejecutandose en background si el adapter no soporta abort nativo; el SDK debe dejar claro ese comportamiento en logs/comentarios internos.
+- Exportar utilidades desde el paquete solo si forman parte de la API publica acordada; de lo contrario mantenerlas internas.
+- No incluir logica de retry en este modulo (permanece en `withRetry` / TT-026).
+
+**Criterios de aceptacion**
+- Operacion que excede `timeoutMs` rechaza con `OperationTimeoutError` (`code: OPERATION_TIMEOUT`).
+- `signal.abort()` durante ejecucion rechaza con `OperationCancelledError` (`code: OPERATION_CANCELLED`) sin esperar a que `fn()` termine por si sola.
+- Sin `timeoutMs` ni `signal`, el wrapper delega en `fn()` sin alterar comportamiento.
+- Metadata de error incluye `botId` / nombre de operacion cuando se provea contexto (sin secretos).
+
+**Definicion de completado (DoD)**
+- Utilidad cubierta por unit tests con timers falsos y `AbortController`.
+- Sin fugas de listeners de `abort` ni timers activos tras completar la operacion (exito, error o cancelacion).
+- Tipado estricto; sin `any` en superficie exportada.
+
+**Pruebas requeridas**
+- Unit test: operacion rapida dentro de timeout → exito.
+- Unit test: operacion colgada → `OperationTimeoutError` al vencer `timeoutMs`.
+- Unit test: `fn()` rapida → no dispara timeout tardio (timer limpiado).
+- Unit test: abort antes del primer intento → `OperationCancelledError`.
+- Unit test: abort mientras `fn()` esta pendiente → `OperationCancelledError` (operacion colgada simulada).
+
+#### TT-046 - Definir politica de retry por operacion (excluir o restringir `sendMessage`)
+
+**UC relacionados:** `UC-005`, `UC-006`, `UC-007`  
+**Referencias:** TRD §7.7 (tabla idempotencia), TRD §7.8  
+**Objetivo:** Evitar doble envio de mensajes cuando un fallo transitorio ocurre despues de un envio ambiguo al proveedor.
+
+**Nota de orden:** Completar **antes** de (o en el mismo PR que) TT-045, para que la integracion en `guard()` no consolide temporalmente retry uniforme en `sendMessage`.
+
+**Descripcion detallada**
+- Introducir politica de retry por tipo de operacion en el core (p. ej. mapa `operationKind -> RetryPolicy | 'none'`).
+- Regla por defecto para `sendMessage`: **sin retry automatico** (`maxRetries: 0`) salvo configuracion explicita del consumidor.
+- Mantener retry para operaciones idempotentes o de lifecycle segun TRD §7.7 (`startBot`, `stopBot`, bindings, etc.).
+- Opcional v1: permitir `isRetryable` custom solo para errores clasificados como claramente pre-envio (documentar criterio; no reintentar `TransientNetworkError` generico en send).
+- Actualizar tests de TT-026 que asumen retry uniforme en `sendMessage`.
+- Exponer hook/API interna que TT-045 consumira al componer retry en `guard()`.
+
+**Criterios de aceptacion**
+- `sendMessage` con fallo `TransientNetworkError` simulado no reintenta por defecto.
+- `startBot` (u otra operacion idempotente) sigue reintentando segun `RetryPolicy` global.
+- Comportamiento documentado en README / guia (TT-040/043) cuando existan.
+
+**Definicion de completado (DoD)**
+- Politica por operacion centralizada (no ramas ad hoc dispersas en cada metodo).
+- Unit tests negativos: un solo intento de envio en escenario transitorio ambiguo.
+- Listo para integracion en `guard()` sin cambiar reglas de `sendMessage` en TT-045.
+
+**Pruebas requeridas**
+- Unit test: `sendMessage` + `TransientNetworkError` → 1 llamada al adapter.
+- Unit test: `startBot` + `TransientNetworkError` → reintentos segun politica.
+- Unit test: politica global override solo si se expone API explicita para ello (si no, omitir).
+
+#### TT-045 - Integrar `timeoutMs` y `AbortSignal` en `RuntimeManager` para operaciones criticas
+
+**UC relacionados:** `UC-001`, `UC-002`, `UC-005`, `UC-006`, `UC-007`  
+**Referencias:** PRD CA-10, TRD §7.8  
+**Objetivo:** Aplicar el control operacional a todas las rutas publicas con red o lifecycle que aceptan `OperationOptions`.
+
+**Descripcion detallada**
+- Componer en `RuntimeManager.guard()` (o helper dedicado `withOperationControl`):
+  1. control de timeout/cancelacion (TT-044),
+  2. retry/backoff (TT-026) segun **politica por operacion** (TT-046; reglas finales y mapa en TT-046),
+  3. mapping de errores y emision de eventos existente.
+- La integracion **debe** consumir el hook/mapa de TT-046 desde el primer merge; no dejar retry uniforme en `sendMessage` aunque TT-046 refine reglas despues.
+- **Decision v1 — timeout por intento (no global):** cada intento de retry se envuelve con su propio `timeoutMs`. El wall-clock total puede superar `timeoutMs` (p. ej. `maxRetries: 3` y `timeoutMs: 1000` → hasta ~4s de intentos + backoff). `totalTimeoutMs` global queda fuera de alcance v1 (futuro si hace falta).
+- Aplicar a operaciones criticas como minimo:
+  - `registerBot`, `unregisterBot`, `startBot`, `stopBot`,
+  - `registerSubscription`, `unregisterSubscription`,
+  - `sendMessage`.
+- Pasar `signal` al adapter cuando el contrato `TelegramProviderAdapter` lo permita; documentar noop en adapters que aun no propaguen abort.
+- Respetar `validateOperationOptions` (TT-016): `timeoutMs` validado en input debe tener efecto real en runtime.
+
+**Criterios de aceptacion**
+- `{ timeoutMs: 1000 }` en un intento colgado falla en ~1s con `OperationTimeoutError` en ese intento (timeout **por intento**).
+- Con `maxRetries: 3` y `timeoutMs: 1000`, una operacion con reintentos puede durar mas de 1s en total (intentos + backoff); no se interpreta `timeoutMs` como limite global de la operacion completa.
+- `AbortController.abort()` durante operacion en curso rechaza con `OperationCancelledError`.
+- `sendMessage` no usa retry uniforme: aplica politica TT-046 (`maxRetries: 0` por defecto).
+- Operaciones sin `OperationOptions` mantienen comportamiento actual salvo retry ya configurado.
+- Cumple PRD CA-10 para el manager y operaciones listadas.
+
+**Definicion de completado (DoD)**
+- Integracion en `guard()` o equivalente unico para evitar duplicacion.
+- Composicion documentada: retry envuelve intentos; cada intento envuelto por timeout/cancel (TT-044).
+- Unit tests en `runtime-manager.test.ts` con adapter mock colgado.
+- Logs operacionales en timeout/cancel sin secretos (TT-017).
+
+**Pruebas requeridas**
+- Unit test: `startBot` con timeout en un intento → `OperationTimeoutError`.
+- Unit test: `sendMessage` abortado en vuelo → `OperationCancelledError`.
+- Unit test: operacion exitosa con `timeoutMs` amplio → sin error.
+- Unit test: multiples intentos con timeout por intento respetan limite por intento, no global.
+- Regresion: retry transitorio en `startBot` (TT-026 + TT-046) sigue funcionando.
+- Regresion: `sendMessage` + transitorio → una sola llamada al adapter (TT-046).
+
+#### TT-047 - Reconciliar estado del runtime ante timeout o cancelacion en lifecycle
+
+**UC relacionados:** `UC-001`, `UC-002`, `UC-007`, `UC-008`  
+**Referencias:** PRD §11.3, TRD §7.8  
+**Objetivo:** Dejar el registry y los eventos internos consistentes cuando una operacion de lifecycle se interrumpe por timeout o cancelacion.
+
+**Descripcion detallada**
+- Publicar tabla de reconciliacion como **contrato operativo** en TRD §7.8 (ampliacion) o en `Documentacion/RECONCILIATION-LIFECYCLE.md` versionado con el repo; no solo comentarios en codigo.
+- Implementar segun esa tabla por operacion interrumpida:
+  - `startBot` cancelado/timeout durante `starting` → transicion a `error` o `registered`/`stopped` segun matriz acordada con TT-039; no dejar `starting` colgado.
+  - `stopBot` cancelado/timeout durante `stopping` → reconciliar hacia `error` o estado estable documentado.
+  - `registerSubscription` interrumpido → revertir registro si bind no completo (alineado con TRD §7.7).
+- Emitir evento de error/runtime (`onError` / `runtime_error`) con contexto (`botId`, operacion, `OperationTimeoutError` | `OperationCancelledError`).
+- Coordinar con TT-039 (estados intermedios): esta tarea no reimplementa la maquina de estados; extiende manejo de fallo operacional.
+- Tras reconciliacion, no debe quedar posibilidad de doble conexion por reintento manual sin politica clara.
+
+**Criterios de aceptacion**
+- `startBot` colgado + timeout deja el bot en estado consultable coherente (no `starting` eterno).
+- Cancelacion de `stopBot` emite error tipado y estado reconciliado segun tabla.
+- Event bus recibe notificacion de error operacional en los casos definidos.
+- Compatible con idempotencia de TT-039 (`start` sobre `started`, etc.).
+
+**Definicion de completado (DoD)**
+- Tabla de reconciliacion publicada en TRD o `Documentacion/RECONCILIATION-LIFECYCLE.md` y referenciada desde el codigo.
+- Unit tests alineados fila a fila con la tabla publicada.
+- Sin regresion en happy path de start/stop.
+
+**Pruebas requeridas**
+- Revision: cada fila de la tabla tiene al menos un test correspondiente.
+- Unit test: timeout en `startBot` durante `starting` → estado final esperado + evento error.
+- Unit test: cancel en `stopBot` durante `stopping` → estado final + evento error.
+- Unit test: consulta de estado post-fallo refleja realidad del registry.
 
 #### TT-027 - Contract tests del adapter (chat y topic)
 
@@ -976,7 +1144,7 @@ Cobertura: `UC-009`, `UC-005`, `UC-006`, `UC-004`
 
 - `TT-043` Guia de operacion y troubleshooting.
   - UC: `UC-007`, `UC-008`, `UC-009`
-  - Dependencias: `TT-025`, `TT-026`, `TT-040`
+  - Dependencias: `TT-025`, `TT-026`, `TT-040`, `TT-045`, `TT-047`
 
 ### Detalle de Ejecucion - Calidad, CI/CD y Release
 
@@ -1111,6 +1279,32 @@ Cobertura: `UC-009`, `UC-005`, `UC-006`, `UC-004`
 - Prueba negativa forzando error con secreto y validando redaccion.
 - Revisión manual de logs en flujos principales.
 
+#### TT-048 - Endurecer politica de retry (maxDelayMs, jitter, presets opcionales)
+
+**UC relacionados:** `UC-007`, `UC-008`  
+**Referencias:** TRD §7.8 (retry); mapa por operacion en TT-046  
+**Objetivo:** Reducir thundering herd y acotar latencia maxima entre reintentos en entornos de produccion.
+
+**Descripcion detallada**
+- Extender `RetryPolicy` con `maxDelayMs` y jitter (full o equal jitter).
+- Aplicar cap superior en `computeBackoffDelayMs`.
+- Opcional: presets de backoff por `operationKind` que **consuman** el mapa de TT-046 (sin redefinir clasificacion por operacion).
+- Mantener compatibilidad con politica actual (`maxRetries`, `baseDelayMs`).
+- Fuera de alcance: duplicar reglas de idempotencia/retry por operacion (permanecen en TT-046).
+
+**Criterios de aceptacion**
+- Delay entre intentos nunca supera `maxDelayMs`.
+- Jitter evita reintentos sincronizados en tests estadisticos o con seed fijo.
+- Politica invalida sigue normalizandose de forma segura.
+
+**Definicion de completado (DoD)**
+- Unit tests de backoff con valores acotados.
+- Sin cambio de comportamiento por defecto salvo mejora acotada documentada.
+
+**Pruebas requeridas**
+- Unit tests de `computeBackoffDelayMs` con jitter determinista (mock de random).
+- Unit test: `maxDelayMs` respeta techo.
+
 ### Detalle de Ejecucion - Documentacion y Ejemplos
 
 #### TT-040 - Escribir README tecnico (quickstart, API, errores, lifecycle)
@@ -1203,7 +1397,9 @@ Cobertura: `UC-009`, `UC-005`, `UC-006`, `UC-004`
   - credenciales invalidas,
   - permisos insuficientes,
   - chat/topic no compatible,
-  - problemas de red/rate limits.
+  - problemas de red/rate limits,
+  - timeout y cancelacion operacional (`OperationTimeoutError`, `OperationCancelledError`),
+  - estados intermedios tras fallo en lifecycle (`starting`/`stopping`).
 - Definir playbooks de respuesta y pasos de validacion.
 - Incluir seccion de observabilidad (logs/eventos clave).
 
@@ -1323,21 +1519,22 @@ Cobertura: `UC-009`, `UC-005`, `UC-006`, `UC-004`
 1. `EP-001` completo.
 2. Implementar `TT-021` (base lifecycle/cleanup MTProto) y validar via contract tests.
 3. `EP-002` core completo con unit tests, incluyendo lifecycle/idempotencia `TT-039`.
-4. `EP-003` adapters con resolver y contract tests.
-5. `EP-004` CI/release hardening.
-6. `EP-005` docs y ejemplos para adopcion.
+4. `TT-026` (retry/backoff) → `TT-044` (control operacional) → `TT-046` (politica por operacion / `sendMessage` sin retry) → `TT-045` (integracion en manager, CA-10; depende de TT-046) → `TT-047` (reconciliacion tras timeout/cancel; requiere `TT-039` para estados intermedios).
+5. `EP-003` adapters con resolver y contract tests (`TT-027` recomienda `TT-045` completado).
+6. `EP-004` CI/release hardening (`TT-048` opcional post-MVP o Sprint 4).
+7. `EP-005` docs y ejemplos para adopcion (`TT-043` tras `TT-045` y `TT-047`).
 
 ## 6) Matriz Resumen UC -> Tareas
 
 - `UC-PLT-001`: `TT-001` `TT-002` `TT-003` `TT-004` `TT-005` `TT-030` `TT-031` `TT-035` `TT-037` `TT-038`
-- `UC-001`: `TT-010` `TT-012` `TT-015` `TT-016` `TT-020` `TT-021` `TT-028` `TT-029` `TT-039` `TT-041`
-- `UC-002`: `TT-012` `TT-015` `TT-021` `TT-028` `TT-029` `TT-039` `TT-041`
+- `UC-001`: `TT-010` `TT-012` `TT-015` `TT-016` `TT-020` `TT-021` `TT-028` `TT-029` `TT-039` `TT-041` `TT-045` `TT-047`
+- `UC-002`: `TT-012` `TT-015` `TT-021` `TT-028` `TT-029` `TT-039` `TT-041` `TT-045` `TT-047`
 - `UC-003`: `TT-013` `TT-015` `TT-016` `TT-022` `TT-028` `TT-041`
 - `UC-004`: `TT-014` `TT-015` `TT-022` `TT-027` `TT-028` `TT-041`
-- `UC-005`: `TT-010` `TT-015` `TT-016` `TT-023` `TT-027` `TT-028` `TT-029` `TT-041`
-- `UC-006`: `TT-010` `TT-015` `TT-016` `TT-024` `TT-027` `TT-028` `TT-029` `TT-042`
-- `UC-007`: `TT-011` `TT-016` `TT-018` `TT-025` `TT-026` `TT-028` `TT-029` `TT-031` `TT-039` `TT-043`
-- `UC-008`: `TT-014` `TT-017` `TT-026` `TT-034` `TT-043`
+- `UC-005`: `TT-010` `TT-015` `TT-016` `TT-023` `TT-027` `TT-028` `TT-029` `TT-041` `TT-045` `TT-046`
+- `UC-006`: `TT-010` `TT-015` `TT-016` `TT-024` `TT-027` `TT-028` `TT-029` `TT-042` `TT-045` `TT-046`
+- `UC-007`: `TT-011` `TT-016` `TT-018` `TT-025` `TT-026` `TT-028` `TT-029` `TT-031` `TT-039` `TT-043` `TT-044` `TT-045` `TT-046` `TT-047` `TT-048`
+- `UC-008`: `TT-014` `TT-017` `TT-026` `TT-034` `TT-043` `TT-044` `TT-045` `TT-047` `TT-048`
 - `UC-009`: `TT-005` `TT-006` `TT-030` `TT-032` `TT-033` `TT-035` `TT-036` `TT-037` `TT-038` `TT-040` `TT-042` `TT-043`
 
 ## 7) Definition of Done Global

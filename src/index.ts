@@ -45,6 +45,14 @@ export { mapGramJsProviderError } from "./adapters/telegram/mtproto/map-gramjs-e
 export { NoopLogger } from "./observability/noop-logger.js";
 export type { Logger } from "./observability/logger.js";
 export {
+  computeBackoffDelayMs,
+  DEFAULT_RETRY_POLICY,
+  isTransientSdkError,
+  normalizeRetryPolicy,
+  withRetry,
+} from "./utils/retry.js";
+export type { RetryPolicy, WithRetryOptions } from "./utils/retry.js";
+export {
   MAX_MESSAGE_TEXT_LENGTH,
   validateBindingId,
   validateBotId,
