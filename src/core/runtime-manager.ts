@@ -33,12 +33,20 @@ import {
   validateRegisterSubscriptionInput,
   validateSendMessageInput,
 } from "./validators.js";
+import {
+  DEFAULT_RETRY_POLICY,
+  normalizeRetryPolicy,
+  type RetryPolicy,
+  withRetry,
+} from "../utils/retry.js";
 
 export type RuntimeManagerDeps = Readonly<{
   botRegistry?: BotRegistry;
   subscriptionRegistry?: SubscriptionRegistry;
   eventBus?: EventBus;
   logger?: Logger;
+  /** Retry policy for transient failures; defaults to {@link DEFAULT_RETRY_POLICY}. Set `maxRetries: 0` to disable. */
+  retryPolicy?: RetryPolicy;
 }>;
 
 /** Orchestrates registries, event bus and provider adapter (`TelegramRuntimeSdk`, TRD §5.1, TT-015). */
@@ -47,6 +55,7 @@ export class RuntimeManager implements TelegramRuntimeSdk {
   private readonly subscriptions: SubscriptionRegistry;
   private readonly bus: EventBus;
   private readonly logger: Logger;
+  private readonly retryPolicy: RetryPolicy;
 
   constructor(
     private readonly resolver: TelegramAdapterResolver,
@@ -55,6 +64,7 @@ export class RuntimeManager implements TelegramRuntimeSdk {
     this.bots = deps?.botRegistry ?? new BotRegistry();
     this.bus = deps?.eventBus ?? new EventBus();
     this.logger = deps?.logger ?? new NoopLogger();
+    this.retryPolicy = normalizeRetryPolicy(deps?.retryPolicy ?? DEFAULT_RETRY_POLICY);
     this.subscriptions =
       deps?.subscriptionRegistry ??
       new SubscriptionRegistry((botId) => this.bots.get(botId) !== undefined);
@@ -71,9 +81,12 @@ export class RuntimeManager implements TelegramRuntimeSdk {
 
     this.bots.register(input);
     try {
-      await this.guard(adapter.registerBot(input, options), "registerBot", {
-        botId: input.botId,
-      });
+      await this.guard(
+        () => adapter.registerBot(input, options),
+        "registerBot",
+        { botId: input.botId },
+        options,
+      );
     } catch (cause) {
       this.bots.unregister(input.botId);
       throw cause;
@@ -94,14 +107,16 @@ export class RuntimeManager implements TelegramRuntimeSdk {
     this.logger.debug("unregisterBot requested", { botId, bindingCount: bindings.length });
 
     for (const binding of bindings) {
-      await this.guard(adapter.unbindIncomingMessages(binding.bindingId, options), "unbindIncomingMessages", {
-        botId,
-        bindingId: binding.bindingId,
-      });
+      await this.guard(
+        () => adapter.unbindIncomingMessages(binding.bindingId, options),
+        "unbindIncomingMessages",
+        { botId, bindingId: binding.bindingId },
+        options,
+      );
     }
 
-    await this.guard(adapter.unregisterBot(botId, options), "unregisterBot", { botId });
-    await this.guard(adapter.cleanupBot(botId, options), "cleanupBot", { botId });
+    await this.guard(() => adapter.unregisterBot(botId, options), "unregisterBot", { botId }, options);
+    await this.guard(() => adapter.cleanupBot(botId, options), "cleanupBot", { botId }, options);
     this.subscriptions.unregisterByBotId(botId);
     this.bots.unregister(botId);
     this.logger.info("bot unregistered", { botId });
@@ -123,7 +138,7 @@ export class RuntimeManager implements TelegramRuntimeSdk {
     const afterBegin = this.requireBot(botId);
 
     try {
-      await this.guard(adapter.startBot(botId, options), "startBot", { botId });
+      await this.guard(() => adapter.startBot(botId, options), "startBot", { botId }, options);
     } catch (cause) {
       this.bots.markError(botId);
       this.notifyBotState(botId, BotLifecycle.Error, afterBegin.status);
@@ -162,7 +177,7 @@ export class RuntimeManager implements TelegramRuntimeSdk {
     }
 
     try {
-      await this.guard(adapter.stopBot(botId, options), "stopBot", { botId });
+      await this.guard(() => adapter.stopBot(botId, options), "stopBot", { botId }, options);
     } catch (cause) {
       this.bots.markError(botId);
       this.notifyBotState(botId, BotLifecycle.Error, mid.status);
@@ -201,10 +216,12 @@ export class RuntimeManager implements TelegramRuntimeSdk {
     };
 
     try {
-      await this.guard(adapter.bindIncomingMessages(input, forward, options), "bindIncomingMessages", {
-        botId: input.botId,
-        bindingId,
-      });
+      await this.guard(
+        () => adapter.bindIncomingMessages(input, forward, options),
+        "bindIncomingMessages",
+        { botId: input.botId, bindingId },
+        options,
+      );
     } catch (cause) {
       this.subscriptions.unregister(input.bindingId);
       throw cause;
@@ -226,10 +243,12 @@ export class RuntimeManager implements TelegramRuntimeSdk {
     }
 
     const adapter = this.adapterForBot(binding.botId);
-    await this.guard(adapter.unbindIncomingMessages(bindingId, options), "unbindIncomingMessages", {
-      botId: binding.botId,
-      bindingId,
-    });
+    await this.guard(
+      () => adapter.unbindIncomingMessages(bindingId, options),
+      "unbindIncomingMessages",
+      { botId: binding.botId, bindingId },
+      options,
+    );
     this.subscriptions.unregister(bindingId);
     this.logger.info("subscription unregistered", { bindingId, botId: binding.botId });
   }
@@ -247,9 +266,12 @@ export class RuntimeManager implements TelegramRuntimeSdk {
       hasTopicId: input.topicId !== undefined,
       parseMode: input.parseMode,
     });
-    const result = await this.guard(adapter.sendMessage(input, options), "sendMessage", {
-      botId: input.botId,
-    });
+    const result = await this.guard(
+      () => adapter.sendMessage(input, options),
+      "sendMessage",
+      { botId: input.botId },
+      options,
+    );
     this.logger.info("message sent", {
       botId: result.botId,
       chatId: result.chatId,
@@ -326,12 +348,18 @@ export class RuntimeManager implements TelegramRuntimeSdk {
   }
 
   private async guard<T>(
-    promise: Promise<T>,
+    fn: () => Promise<T>,
     operation: string,
     meta?: Readonly<Record<string, unknown>>,
+    options?: OperationOptions,
   ): Promise<T> {
     try {
-      return await promise;
+      return await withRetry(fn, this.retryPolicy, {
+        logger: this.logger,
+        operation,
+        signal: options?.signal,
+        meta,
+      });
     } catch (cause) {
       const mapped = mapUnknownToSdkError(cause);
       this.logger.error("runtime operation failed", {

@@ -618,3 +618,61 @@ describe("RuntimeManager (TT-015)", () => {
     });
   });
 });
+
+describe("RuntimeManager retry (TT-026)", () => {
+  it("retries transient startBot failures then succeeds", async () => {
+    const { adapter } = createMockAdapter();
+    const logger = createMockLogger();
+    adapter.startBot = vi
+      .fn()
+      .mockRejectedValueOnce(new TransientNetworkError("transient"))
+      .mockResolvedValue(undefined);
+
+    const mgr = new RuntimeManager(resolverFor(adapter), {
+      logger,
+      retryPolicy: { maxRetries: 2, baseDelayMs: 1 },
+    });
+    const onError = vi.fn();
+    mgr.onError(onError);
+
+    await mgr.registerBot(registerInput("retry"));
+    await mgr.startBot("retry");
+
+    expect(adapter.startBot).toHaveBeenCalledTimes(2);
+    expect(logger.warn).toHaveBeenCalledWith(
+      "retrying transient operation failure",
+      expect.objectContaining({ operation: "startBot", botId: "retry" }),
+    );
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("does not retry validation errors from adapter", async () => {
+    const { adapter } = createMockAdapter();
+    adapter.startBot = vi.fn(async () => {
+      throw new ValidationError("bad input");
+    });
+
+    const mgr = new RuntimeManager(resolverFor(adapter), {
+      retryPolicy: { maxRetries: 3, baseDelayMs: 1 },
+    });
+
+    await mgr.registerBot(registerInput("no-retry"));
+    await expect(mgr.startBot("no-retry")).rejects.toBeInstanceOf(ValidationError);
+    expect(adapter.startBot).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retry when retryPolicy maxRetries is 0", async () => {
+    const { adapter } = createMockAdapter();
+    adapter.startBot = vi.fn(async () => {
+      throw new TransientNetworkError("transient");
+    });
+
+    const mgr = new RuntimeManager(resolverFor(adapter), {
+      retryPolicy: { maxRetries: 0, baseDelayMs: 1 },
+    });
+
+    await mgr.registerBot(registerInput("no-retry-policy"));
+    await expect(mgr.startBot("no-retry-policy")).rejects.toBeInstanceOf(TransientNetworkError);
+    expect(adapter.startBot).toHaveBeenCalledTimes(1);
+  });
+});
