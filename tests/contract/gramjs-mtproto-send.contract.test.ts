@@ -1,8 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type {
-  GramJsSendMessageRawResult,
-  SendMessageInput,
-} from "../../src/index.js";
+import type { GramJsSendMessageRawResult, SendMessageInput } from "../../src/index.js";
 import {
   BotNotFoundError,
   BotNotStartedError,
@@ -77,9 +74,7 @@ describe("GramJsMtprotoAdapter sendMessage (TT-023)", () => {
 
     await adapter.sendMessage(sendInput("b1", { parseMode: "html" }));
 
-    expect(client.sendMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ parseMode: "html" }),
-    );
+    expect(client.sendMessage).toHaveBeenCalledWith(expect.objectContaining({ parseMode: "html" }));
   });
 
   it("passes replyToMessageId to client as replyTo", async () => {
@@ -90,9 +85,7 @@ describe("GramJsMtprotoAdapter sendMessage (TT-023)", () => {
 
     await adapter.sendMessage(sendInput("b1", { replyToMessageId: 42 }));
 
-    expect(client.sendMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ replyTo: 42 }),
-    );
+    expect(client.sendMessage).toHaveBeenCalledWith(expect.objectContaining({ replyTo: 42 }));
   });
 
   it("maps disableLinkPreview to linkPreview: false", async () => {
@@ -139,18 +132,16 @@ describe("GramJsMtprotoAdapter sendMessage (TT-023)", () => {
   it("rejects send when bot is not found", async () => {
     const adapter = new GramJsMtprotoAdapter(() => createMockClient());
 
-    await expect(
-      adapter.sendMessage(sendInput("missing")),
-    ).rejects.toBeInstanceOf(BotNotFoundError);
+    await expect(adapter.sendMessage(sendInput("missing"))).rejects.toBeInstanceOf(
+      BotNotFoundError,
+    );
   });
 
   it("rejects send when bot is not started", async () => {
     const adapter = new GramJsMtprotoAdapter(() => createMockClient());
     await adapter.registerBot(mtprotoInput("b1"));
 
-    await expect(
-      adapter.sendMessage(sendInput("b1")),
-    ).rejects.toBeInstanceOf(BotNotStartedError);
+    await expect(adapter.sendMessage(sendInput("b1"))).rejects.toBeInstanceOf(BotNotStartedError);
   });
 
   it("rejects send when client lacks sendMessage capability", async () => {
@@ -161,9 +152,9 @@ describe("GramJsMtprotoAdapter sendMessage (TT-023)", () => {
     await adapter.registerBot(mtprotoInput("b1"));
     await adapter.startBot("b1");
 
-    await expect(
-      adapter.sendMessage(sendInput("b1")),
-    ).rejects.toBeInstanceOf(CapabilityNotSupportedError);
+    await expect(adapter.sendMessage(sendInput("b1"))).rejects.toBeInstanceOf(
+      CapabilityNotSupportedError,
+    );
   });
 
   it("wraps generic client send failure via mapper (TransientNetworkError)", async () => {
@@ -247,9 +238,9 @@ describe("GramJsMtprotoAdapter sendMessage forum topics (TT-024)", () => {
     await adapter.registerBot(mtprotoInput("b1"));
     await adapter.startBot("b1");
 
-    await expect(
-      adapter.sendMessage(sendInput("b1", { topicId: 3 })),
-    ).rejects.toBeInstanceOf(CapabilityNotSupportedError);
+    await expect(adapter.sendMessage(sendInput("b1", { topicId: 3 }))).rejects.toBeInstanceOf(
+      CapabilityNotSupportedError,
+    );
     expect(client.sendMessage).not.toHaveBeenCalled();
   });
 
@@ -259,9 +250,9 @@ describe("GramJsMtprotoAdapter sendMessage forum topics (TT-024)", () => {
     await adapter.registerBot(mtprotoInput("b1"));
     await adapter.startBot("b1");
 
-    await expect(
-      adapter.sendMessage(sendInput("b1", { topicId: 99 })),
-    ).rejects.toBeInstanceOf(SendMessageError);
+    await expect(adapter.sendMessage(sendInput("b1", { topicId: 99 }))).rejects.toBeInstanceOf(
+      SendMessageError,
+    );
   });
 
   it("send without topicId does not pass topicId to client (regression)", async () => {

@@ -8,9 +8,9 @@ import { DEFAULT_RETRY_POLICY } from "../../src/utils/retry.js";
 
 describe("operation retry policy (TT-046)", () => {
   it("returns no-retry policy for sendMessage", () => {
-    expect(
-      resolveRetryPolicyForOperation("sendMessage", DEFAULT_RETRY_POLICY),
-    ).toEqual(SEND_MESSAGE_RETRY_POLICY);
+    expect(resolveRetryPolicyForOperation("sendMessage", DEFAULT_RETRY_POLICY)).toEqual(
+      SEND_MESSAGE_RETRY_POLICY,
+    );
   });
 
   it("returns normalized default policy for lifecycle and binding operations", () => {

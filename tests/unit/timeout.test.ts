@@ -90,9 +90,7 @@ describe("withTimeout (TT-044)", () => {
       throw err;
     });
 
-    await expect(
-      withTimeout(fn, { timeoutMs: 5000, signal: controller.signal }),
-    ).rejects.toBe(err);
+    await expect(withTimeout(fn, { timeoutMs: 5000, signal: controller.signal })).rejects.toBe(err);
 
     expect(removeSpy).toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(10_000);
@@ -107,9 +105,9 @@ describe("withTimeout (TT-044)", () => {
       throw new Error("sync boom");
     });
 
-    await expect(
-      withTimeout(fn, { timeoutMs: 5000, signal: controller.signal }),
-    ).rejects.toThrow("sync boom");
+    await expect(withTimeout(fn, { timeoutMs: 5000, signal: controller.signal })).rejects.toThrow(
+      "sync boom",
+    );
 
     expect(removeSpy).toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(10_000);

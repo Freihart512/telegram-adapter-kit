@@ -1,7 +1,4 @@
-import {
-  normalizeRetryPolicy,
-  type RetryPolicy,
-} from "./retry.js";
+import { normalizeRetryPolicy, type RetryPolicy } from "./retry.js";
 
 /** Runtime operations that pass through {@link RuntimeManager} `guard()` (TT-046). */
 export type RuntimeOperationKind =

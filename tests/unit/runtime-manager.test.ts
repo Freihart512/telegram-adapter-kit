@@ -144,7 +144,11 @@ describe("RuntimeManager (TT-015)", () => {
 
     expect(logger.error).toHaveBeenCalledWith(
       "runtime operation failed",
-      expect.objectContaining({ operation: "startBot", code: "TRANSIENT_NETWORK", botId: "err-log" }),
+      expect.objectContaining({
+        operation: "startBot",
+        code: "TRANSIENT_NETWORK",
+        botId: "err-log",
+      }),
     );
     expect(onError).toHaveBeenCalledWith(expect.any(TransientNetworkError));
   });
@@ -220,16 +224,10 @@ describe("RuntimeManager (TT-015)", () => {
     await mgr.stopBot("ord");
     await mgr.unregisterBot("ord");
 
-    expect(order).toEqual([
-      "unbind",
-      "unbind",
-      "adapterUnregisterBot",
-      "cleanupBot",
-      "localUnregisterByBotId",
-    ]);
+    expect(order).toEqual(["cleanupBot", "adapterUnregisterBot", "localUnregisterByBotId"]);
   });
 
-  it("unregisterBot unbinds all bindings then cleanupBot", async () => {
+  it("unregisterBot after stopBot skips adapter unbind and runs cleanup then unregister", async () => {
     const { adapter, getInbound } = createMockAdapter();
     const mgr = new RuntimeManager(resolverFor(adapter));
 
@@ -251,10 +249,9 @@ describe("RuntimeManager (TT-015)", () => {
     await mgr.stopBot("multi");
     await mgr.unregisterBot("multi");
 
-    expect(adapter.unbindIncomingMessages).toHaveBeenCalledTimes(2);
+    expect(adapter.unbindIncomingMessages).not.toHaveBeenCalled();
     expect(adapter.cleanupBot).toHaveBeenCalledOnce();
-    expect(adapter.unbindIncomingMessages).toHaveBeenCalledWith("s1", undefined);
-    expect(adapter.unbindIncomingMessages).toHaveBeenCalledWith("s2", undefined);
+    expect(adapter.unregisterBot).toHaveBeenCalledOnce();
   });
 
   it("registerSubscription forwards filtered messages to onMessage", async () => {
@@ -358,16 +355,56 @@ describe("RuntimeManager (TT-015)", () => {
     expect(adapter.unbindIncomingMessages).not.toHaveBeenCalled();
   });
 
-  it("unregisterBot rejects when bot is still started", async () => {
+  it("unregisterBot rejects when bot is still started without adapter cleanup", async () => {
     const { adapter } = createMockAdapter();
     const mgr = new RuntimeManager(resolverFor(adapter));
 
     await mgr.registerBot(registerInput("run"));
     await mgr.startBot("run");
     await expect(mgr.unregisterBot("run")).rejects.toBeInstanceOf(LifecycleConflictError);
+    expect(adapter.cleanupBot).not.toHaveBeenCalled();
+    expect(adapter.unregisterBot).not.toHaveBeenCalled();
 
     await mgr.stopBot("run");
     await expect(mgr.unregisterBot("run")).resolves.toBeUndefined();
+    expect(adapter.cleanupBot).toHaveBeenCalledOnce();
+    expect(adapter.unregisterBot).toHaveBeenCalledOnce();
+  });
+
+  it("unregisterBot rejects from error without touching adapter", async () => {
+    const bots = new BotRegistry();
+    const { adapter } = createMockAdapter();
+    adapter.stopBot = vi.fn(async () => {
+      throw new Error("stop failed");
+    });
+    const mgr = new RuntimeManager(resolverFor(adapter), { botRegistry: bots });
+
+    await mgr.registerBot(registerInput("err-unreg"));
+    await mgr.startBot("err-unreg");
+    await expect(mgr.stopBot("err-unreg")).rejects.toThrow("stop failed");
+    expect(bots.get("err-unreg")?.status).toBe("error");
+
+    await expect(mgr.unregisterBot("err-unreg")).rejects.toBeInstanceOf(LifecycleConflictError);
+    expect(adapter.cleanupBot).not.toHaveBeenCalled();
+    expect(adapter.unregisterBot).not.toHaveBeenCalled();
+  });
+
+  it("unregisterSubscription unbinds from adapter when bot is in error", async () => {
+    const bots = new BotRegistry();
+    const { adapter } = createMockAdapter();
+    adapter.stopBot = vi.fn(async () => {
+      throw new Error("stop failed");
+    });
+    const mgr = new RuntimeManager(resolverFor(adapter), { botRegistry: bots });
+
+    await mgr.registerBot(registerInput("err-sub"));
+    await mgr.startBot("err-sub");
+    await mgr.registerSubscription({ bindingId: "bind-err", botId: "err-sub", chatId: 1n });
+    await expect(mgr.stopBot("err-sub")).rejects.toThrow("stop failed");
+    expect(bots.get("err-sub")?.status).toBe("error");
+
+    await mgr.unregisterSubscription("bind-err");
+    expect(adapter.unbindIncomingMessages).toHaveBeenCalledWith("bind-err", undefined);
   });
 
   it("emits bot state changes on register and start (including starting)", async () => {
@@ -841,9 +878,7 @@ describe("RuntimeManager lifecycle reconciliation (TT-047)", () => {
     await assertion;
 
     expect(bots.get("reconcile-start")?.status).toBe("error");
-    expect(onError).toHaveBeenCalledWith(
-      expect.objectContaining({ code: "OPERATION_TIMEOUT" }),
-    );
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ code: "OPERATION_TIMEOUT" }));
     expect(adapter.cleanupBot).toHaveBeenCalled();
     resolveCleanup?.();
     await vi.runOnlyPendingTimersAsync();
@@ -904,9 +939,7 @@ describe("RuntimeManager lifecycle reconciliation (TT-047)", () => {
 
     await expect(pending).rejects.toBeInstanceOf(OperationCancelledError);
     expect(bots.get("reconcile-stop")?.status).toBe("started");
-    expect(onError).toHaveBeenCalledWith(
-      expect.objectContaining({ code: "OPERATION_CANCELLED" }),
-    );
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ code: "OPERATION_CANCELLED" }));
   });
 
   it("marks error on non-operational stopBot failure", async () => {
@@ -926,9 +959,7 @@ describe("RuntimeManager lifecycle reconciliation (TT-047)", () => {
     await expect(mgr.stopBot("stop-val")).rejects.toBeInstanceOf(ValidationError);
 
     expect(bots.get("stop-val")?.status).toBe("error");
-    expect(onError).toHaveBeenCalledWith(
-      expect.objectContaining({ code: "VALIDATION_ERROR" }),
-    );
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ code: "VALIDATION_ERROR" }));
   });
 
   it("marks error on non-operational startBot failure", async () => {

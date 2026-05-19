@@ -35,7 +35,11 @@ describe("mapGramJsProviderError (TT-025)", () => {
     );
     expect(mapped).toBeInstanceOf(ValidationError);
     expect(mapped.code).toBe("VALIDATION_ERROR");
-    expect(mapped.meta).toMatchObject({ provider: "gramjs", providerCode: "PEER_ID_INVALID", botId: "b1" });
+    expect(mapped.meta).toMatchObject({
+      provider: "gramjs",
+      providerCode: "PEER_ID_INVALID",
+      botId: "b1",
+    });
     expect(mapped.cause).toEqual({ errorMessage: "PEER_ID_INVALID" });
   });
 

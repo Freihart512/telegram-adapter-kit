@@ -105,9 +105,12 @@ export class GramJsMtprotoAdapter implements TelegramProviderAdapter {
   async registerBot(input: RegisterBotInput): Promise<void> {
     const { botId } = input;
     if (input.credentials.kind !== "mtproto") {
-      throw new CapabilityNotSupportedError("GramJsMtprotoAdapter only supports mtproto credentials", {
-        meta: { botId, providedKind: input.credentials.kind },
-      });
+      throw new CapabilityNotSupportedError(
+        "GramJsMtprotoAdapter only supports mtproto credentials",
+        {
+          meta: { botId, providedKind: input.credentials.kind },
+        },
+      );
     }
     if (this.records.has(botId)) {
       throw new BotAlreadyExistsError(`Bot already registered: ${botId}`, { meta: { botId } });
@@ -190,7 +193,10 @@ export class GramJsMtprotoAdapter implements TelegramProviderAdapter {
    * as `GramJsSendMessageParams.topicId` (forum thread). Requires `capabilities.supportsOutgoingForumTopics`
    * for topic sends; override capabilities in constructor deps to disable.
    */
-  async sendMessage(input: SendMessageInput, options?: OperationOptions): Promise<SendMessageResult> {
+  async sendMessage(
+    input: SendMessageInput,
+    options?: OperationOptions,
+  ): Promise<SendMessageResult> {
     void options;
     validateSendMessageInput(input);
 
@@ -268,10 +274,9 @@ export class GramJsMtprotoAdapter implements TelegramProviderAdapter {
       });
     }
     if (rec.bindings.has(binding.bindingId)) {
-      throw new SubscriptionAlreadyExistsError(
-        `Binding already exists: ${binding.bindingId}`,
-        { meta: { botId: binding.botId, bindingId: binding.bindingId } },
-      );
+      throw new SubscriptionAlreadyExistsError(`Binding already exists: ${binding.bindingId}`, {
+        meta: { botId: binding.botId, bindingId: binding.bindingId },
+      });
     }
 
     const rawHandler: GramJsEventHandler = (event) => {
@@ -289,10 +294,9 @@ export class GramJsMtprotoAdapter implements TelegramProviderAdapter {
     };
 
     if (!rec.client.addEventHandler) {
-      throw new CapabilityNotSupportedError(
-        "Client does not support addEventHandler",
-        { meta: { botId: binding.botId, bindingId: binding.bindingId } },
-      );
+      throw new CapabilityNotSupportedError("Client does not support addEventHandler", {
+        meta: { botId: binding.botId, bindingId: binding.bindingId },
+      });
     }
 
     rec.client.addEventHandler(rawHandler);
@@ -305,10 +309,7 @@ export class GramJsMtprotoAdapter implements TelegramProviderAdapter {
     });
   }
 
-  async unbindIncomingMessages(
-    bindingId: string,
-    options?: OperationOptions,
-  ): Promise<void> {
+  async unbindIncomingMessages(bindingId: string, options?: OperationOptions): Promise<void> {
     void options;
     const rec = this.findRecordByBindingId(bindingId);
     if (!rec) {
@@ -396,9 +397,11 @@ export class GramJsMtprotoAdapter implements TelegramProviderAdapter {
     };
   }
 
-  private resolveChatId(
-    peerId?: { channelId?: bigint; chatId?: bigint; userId?: bigint },
-  ): bigint | undefined {
+  private resolveChatId(peerId?: {
+    channelId?: bigint;
+    chatId?: bigint;
+    userId?: bigint;
+  }): bigint | undefined {
     if (!peerId) return undefined;
     return peerId.channelId ?? peerId.chatId ?? peerId.userId;
   }

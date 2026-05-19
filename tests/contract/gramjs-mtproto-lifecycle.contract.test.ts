@@ -40,7 +40,9 @@ describe("GramJsMtprotoAdapter lifecycle contracts (TT-021)", () => {
       disconnect: async () => {},
     }));
     await adapter.registerBot(mtprotoInput("dup"));
-    await expect(adapter.registerBot(mtprotoInput("dup"))).rejects.toBeInstanceOf(BotAlreadyExistsError);
+    await expect(adapter.registerBot(mtprotoInput("dup"))).rejects.toBeInstanceOf(
+      BotAlreadyExistsError,
+    );
   });
 
   it("isolates multiple bots and only stops target bot connection", async () => {
