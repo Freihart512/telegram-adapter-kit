@@ -33,15 +33,12 @@ import {
   validateRegisterSubscriptionInput,
   validateSendMessageInput,
 } from "./validators.js";
-import {
-  resolveRetryPolicyForOperation,
-  type RuntimeOperationKind,
-} from "../utils/operation-retry-policy.js";
+import { withOperationControl } from "../utils/operation-control.js";
+import type { RuntimeOperationKind } from "../utils/operation-retry-policy.js";
 import {
   DEFAULT_RETRY_POLICY,
   normalizeRetryPolicy,
   type RetryPolicy,
-  withRetry,
 } from "../utils/retry.js";
 
 export type RuntimeManagerDeps = Readonly<{
@@ -358,11 +355,10 @@ export class RuntimeManager implements TelegramRuntimeSdk {
     options?: OperationOptions,
   ): Promise<T> {
     try {
-      const retryPolicy = resolveRetryPolicyForOperation(operation, this.retryPolicy);
-      return await withRetry(fn, retryPolicy, {
+      return await withOperationControl(fn, operation, {
+        defaultRetryPolicy: this.retryPolicy,
+        operationOptions: options,
         logger: this.logger,
-        operation,
-        signal: options?.signal,
         meta,
       });
     } catch (cause) {

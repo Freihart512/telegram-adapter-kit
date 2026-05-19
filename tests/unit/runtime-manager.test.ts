@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TelegramAdapterResolver } from "../../src/contracts/adapter.js";
 import type { TelegramProviderAdapter } from "../../src/contracts/adapter.js";
 import type { IncomingMessageEvent } from "../../src/contracts/events.js";
@@ -18,6 +18,8 @@ import {
   RuntimeManager,
   SubscriptionAlreadyExistsError,
   SubscriptionNotFoundError,
+  OperationCancelledError,
+  OperationTimeoutError,
   TransientNetworkError,
   ValidationError,
 } from "../../src/index.js";
@@ -711,6 +713,91 @@ describe("RuntimeManager per-operation retry (TT-046)", () => {
 
     await mgr.registerBot(registerInput("start-retry"));
     await mgr.startBot("start-retry");
+
+    expect(adapter.startBot).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("RuntimeManager operation control (TT-045)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("startBot rejects with OperationTimeoutError when an attempt hangs", async () => {
+    vi.useFakeTimers();
+    const { adapter } = createMockAdapter();
+    adapter.startBot = vi.fn(
+      () =>
+        new Promise<void>(() => {
+          /* hang */
+        }),
+    );
+
+    const mgr = new RuntimeManager(resolverFor(adapter), {
+      retryPolicy: { maxRetries: 0, baseDelayMs: 1 },
+    });
+
+    await mgr.registerBot(registerInput("timeout-bot"));
+    const pending = mgr.startBot("timeout-bot", { timeoutMs: 1000 });
+    const assertion = expect(pending).rejects.toBeInstanceOf(OperationTimeoutError);
+
+    await vi.advanceTimersByTimeAsync(1000);
+    await assertion;
+    expect(adapter.startBot).toHaveBeenCalledTimes(1);
+  });
+
+  it("sendMessage rejects with OperationCancelledError when aborted in flight", async () => {
+    const { adapter } = createMockAdapter();
+    const controller = new AbortController();
+    adapter.sendMessage = vi.fn(
+      () =>
+        new Promise<never>(() => {
+          /* hang */
+        }),
+    );
+
+    const mgr = new RuntimeManager(resolverFor(adapter));
+    await mgr.registerBot(registerInput("cancel-send"));
+    await mgr.startBot("cancel-send");
+
+    const pending = mgr.sendMessage(
+      { botId: "cancel-send", chatId: 1, text: "hi" },
+      { signal: controller.signal },
+    );
+    controller.abort();
+
+    await expect(pending).rejects.toBeInstanceOf(OperationCancelledError);
+    expect(adapter.sendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("succeeds when timeoutMs is generous", async () => {
+    const { adapter } = createMockAdapter();
+    const mgr = new RuntimeManager(resolverFor(adapter));
+
+    await mgr.registerBot(registerInput("ok-timeout"));
+    await mgr.startBot("ok-timeout", { timeoutMs: 60_000 });
+    const result = await mgr.sendMessage(
+      { botId: "ok-timeout", chatId: 1, text: "hello" },
+      { timeoutMs: 60_000 },
+    );
+
+    expect(result.messageId).toBe(1);
+    expect(adapter.sendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries startBot with timeoutMs applied per attempt", async () => {
+    const { adapter } = createMockAdapter();
+    adapter.startBot = vi
+      .fn()
+      .mockRejectedValueOnce(new TransientNetworkError("transient"))
+      .mockResolvedValue(undefined);
+
+    const mgr = new RuntimeManager(resolverFor(adapter), {
+      retryPolicy: { maxRetries: 1, baseDelayMs: 1 },
+    });
+
+    await mgr.registerBot(registerInput("retry-timeout"));
+    await mgr.startBot("retry-timeout", { timeoutMs: 5000 });
 
     expect(adapter.startBot).toHaveBeenCalledTimes(2);
   });
