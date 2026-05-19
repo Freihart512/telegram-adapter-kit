@@ -676,3 +676,42 @@ describe("RuntimeManager retry (TT-026)", () => {
     expect(adapter.startBot).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("RuntimeManager per-operation retry (TT-046)", () => {
+  it("does not retry sendMessage on TransientNetworkError even with global retries", async () => {
+    const { adapter } = createMockAdapter();
+    adapter.sendMessage = vi.fn(async () => {
+      throw new TransientNetworkError("ambiguous send failure");
+    });
+
+    const mgr = new RuntimeManager(resolverFor(adapter), {
+      retryPolicy: { maxRetries: 3, baseDelayMs: 1 },
+    });
+
+    await mgr.registerBot(registerInput("send-once"));
+    await mgr.startBot("send-once");
+
+    await expect(
+      mgr.sendMessage({ botId: "send-once", chatId: 1, text: "hi" }),
+    ).rejects.toBeInstanceOf(TransientNetworkError);
+
+    expect(adapter.sendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("still retries startBot according to global retry policy", async () => {
+    const { adapter } = createMockAdapter();
+    adapter.startBot = vi
+      .fn()
+      .mockRejectedValueOnce(new TransientNetworkError("transient"))
+      .mockResolvedValue(undefined);
+
+    const mgr = new RuntimeManager(resolverFor(adapter), {
+      retryPolicy: { maxRetries: 2, baseDelayMs: 1 },
+    });
+
+    await mgr.registerBot(registerInput("start-retry"));
+    await mgr.startBot("start-retry");
+
+    expect(adapter.startBot).toHaveBeenCalledTimes(2);
+  });
+});

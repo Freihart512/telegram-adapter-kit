@@ -34,6 +34,10 @@ import {
   validateSendMessageInput,
 } from "./validators.js";
 import {
+  resolveRetryPolicyForOperation,
+  type RuntimeOperationKind,
+} from "../utils/operation-retry-policy.js";
+import {
   DEFAULT_RETRY_POLICY,
   normalizeRetryPolicy,
   type RetryPolicy,
@@ -349,12 +353,13 @@ export class RuntimeManager implements TelegramRuntimeSdk {
 
   private async guard<T>(
     fn: () => Promise<T>,
-    operation: string,
+    operation: RuntimeOperationKind,
     meta?: Readonly<Record<string, unknown>>,
     options?: OperationOptions,
   ): Promise<T> {
     try {
-      return await withRetry(fn, this.retryPolicy, {
+      const retryPolicy = resolveRetryPolicyForOperation(operation, this.retryPolicy);
+      return await withRetry(fn, retryPolicy, {
         logger: this.logger,
         operation,
         signal: options?.signal,
