@@ -802,3 +802,168 @@ describe("RuntimeManager operation control (TT-045)", () => {
     expect(adapter.startBot).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("RuntimeManager lifecycle reconciliation (TT-047)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("marks error on startBot timeout without waiting for cleanup", async () => {
+    vi.useFakeTimers();
+    const { adapter } = createMockAdapter();
+    const bots = new BotRegistry();
+    let resolveCleanup: (() => void) | undefined;
+    adapter.startBot = vi.fn(
+      () =>
+        new Promise<void>(() => {
+          /* hang */
+        }),
+    );
+    adapter.cleanupBot = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveCleanup = resolve;
+        }),
+    );
+
+    const mgr = new RuntimeManager(resolverFor(adapter), {
+      botRegistry: bots,
+      retryPolicy: { maxRetries: 0, baseDelayMs: 1 },
+    });
+    const onError = vi.fn();
+    mgr.onError(onError);
+
+    await mgr.registerBot(registerInput("reconcile-start"));
+    const pending = mgr.startBot("reconcile-start", { timeoutMs: 1000 });
+    const assertion = expect(pending).rejects.toBeInstanceOf(OperationTimeoutError);
+
+    await vi.advanceTimersByTimeAsync(1000);
+    await assertion;
+
+    expect(bots.get("reconcile-start")?.status).toBe("error");
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "OPERATION_TIMEOUT" }),
+    );
+    expect(adapter.cleanupBot).toHaveBeenCalled();
+    resolveCleanup?.();
+    await vi.runOnlyPendingTimersAsync();
+  });
+
+  it("rejects startBot timeout when cleanupBot hangs", async () => {
+    vi.useFakeTimers();
+    const { adapter } = createMockAdapter();
+    const bots = new BotRegistry();
+    adapter.startBot = vi.fn(
+      () =>
+        new Promise<void>(() => {
+          /* hang */
+        }),
+    );
+    adapter.cleanupBot = vi.fn(
+      () =>
+        new Promise<void>(() => {
+          /* hang forever */
+        }),
+    );
+
+    const mgr = new RuntimeManager(resolverFor(adapter), {
+      botRegistry: bots,
+      retryPolicy: { maxRetries: 0, baseDelayMs: 1 },
+    });
+
+    await mgr.registerBot(registerInput("cleanup-hang"));
+    const pending = mgr.startBot("cleanup-hang", { timeoutMs: 1000 });
+    const assertion = expect(pending).rejects.toBeInstanceOf(OperationTimeoutError);
+
+    await vi.advanceTimersByTimeAsync(1000);
+    await assertion;
+
+    expect(bots.get("cleanup-hang")?.status).toBe("error");
+  });
+
+  it("reverts to started on stopBot cancellation and emits onError", async () => {
+    const { adapter } = createMockAdapter();
+    const bots = new BotRegistry();
+    const controller = new AbortController();
+    adapter.stopBot = vi.fn(
+      () =>
+        new Promise<void>(() => {
+          /* hang */
+        }),
+    );
+
+    const mgr = new RuntimeManager(resolverFor(adapter), { botRegistry: bots });
+    const onError = vi.fn();
+    mgr.onError(onError);
+
+    await mgr.registerBot(registerInput("reconcile-stop"));
+    await mgr.startBot("reconcile-stop");
+
+    const pending = mgr.stopBot("reconcile-stop", { signal: controller.signal });
+    controller.abort();
+
+    await expect(pending).rejects.toBeInstanceOf(OperationCancelledError);
+    expect(bots.get("reconcile-stop")?.status).toBe("started");
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "OPERATION_CANCELLED" }),
+    );
+  });
+
+  it("marks error on non-operational stopBot failure", async () => {
+    const { adapter } = createMockAdapter();
+    const bots = new BotRegistry();
+    adapter.stopBot = vi.fn(async () => {
+      throw new ValidationError("stop failed");
+    });
+
+    const mgr = new RuntimeManager(resolverFor(adapter), { botRegistry: bots });
+    const onError = vi.fn();
+    mgr.onError(onError);
+
+    await mgr.registerBot(registerInput("stop-val"));
+    await mgr.startBot("stop-val");
+
+    await expect(mgr.stopBot("stop-val")).rejects.toBeInstanceOf(ValidationError);
+
+    expect(bots.get("stop-val")?.status).toBe("error");
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "VALIDATION_ERROR" }),
+    );
+  });
+
+  it("marks error on non-operational startBot failure", async () => {
+    const { adapter } = createMockAdapter();
+    const bots = new BotRegistry();
+    adapter.startBot = vi.fn(async () => {
+      throw new ValidationError("bad");
+    });
+
+    const mgr = new RuntimeManager(resolverFor(adapter), { botRegistry: bots });
+
+    await mgr.registerBot(registerInput("start-val"));
+    await expect(mgr.startBot("start-val")).rejects.toBeInstanceOf(ValidationError);
+
+    expect(bots.get("start-val")?.status).toBe("error");
+  });
+
+  it("rolls back registerSubscription when bind fails", async () => {
+    const { adapter } = createMockAdapter();
+    const subs = new SubscriptionRegistry((botId) => botId === "sub-bot");
+    adapter.bindIncomingMessages = vi.fn(async () => {
+      throw new OperationTimeoutError("bind timed out");
+    });
+
+    const mgr = new RuntimeManager(resolverFor(adapter), {
+      subscriptionRegistry: subs,
+    });
+
+    await mgr.registerBot(registerInput("sub-bot"));
+    await mgr.startBot("sub-bot");
+
+    await expect(
+      mgr.registerSubscription({ bindingId: "b1", botId: "sub-bot", chatId: 1 }),
+    ).rejects.toBeInstanceOf(OperationTimeoutError);
+
+    expect(subs.get("b1")).toBeUndefined();
+  });
+});

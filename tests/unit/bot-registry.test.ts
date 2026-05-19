@@ -104,6 +104,17 @@ describe("BotRegistry (TT-012)", () => {
     expect(() => reg.markError("x")).toThrow(LifecycleConflictError);
   });
 
+  it("abortStop reverts from stopping to started (TT-047)", () => {
+    const reg = new BotRegistry();
+    reg.register(botApiInput("s"));
+    reg.start("s");
+    reg.beginStop("s");
+    expect(reg.get("s")?.status).toBe("stopping");
+
+    reg.abortStop("s", "started");
+    expect(reg.get("s")?.status).toBe("started");
+  });
+
   it("allows markError while stopping and keeps it idempotent on error", () => {
     const reg = new BotRegistry();
     reg.register(botApiInput("s"));
