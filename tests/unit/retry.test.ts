@@ -70,9 +70,9 @@ describe("retry utilities (TT-026)", () => {
       throw new ValidationError("invalid");
     });
 
-    await expect(
-      withRetry(fn, { maxRetries: 5, baseDelayMs: 1 }),
-    ).rejects.toBeInstanceOf(ValidationError);
+    await expect(withRetry(fn, { maxRetries: 5, baseDelayMs: 1 })).rejects.toBeInstanceOf(
+      ValidationError,
+    );
     expect(fn).toHaveBeenCalledTimes(1);
   });
 
@@ -81,9 +81,9 @@ describe("retry utilities (TT-026)", () => {
       throw new SendMessageError("send failed");
     });
 
-    await expect(
-      withRetry(fn, { maxRetries: 5, baseDelayMs: 1 }),
-    ).rejects.toBeInstanceOf(SendMessageError);
+    await expect(withRetry(fn, { maxRetries: 5, baseDelayMs: 1 })).rejects.toBeInstanceOf(
+      SendMessageError,
+    );
     expect(fn).toHaveBeenCalledTimes(1);
   });
 
@@ -109,9 +109,7 @@ describe("retry utilities (TT-026)", () => {
       throw last;
     });
 
-    await expect(
-      withRetry(fn, { maxRetries: 2, baseDelayMs: 1 }),
-    ).rejects.toBe(last);
+    await expect(withRetry(fn, { maxRetries: 2, baseDelayMs: 1 })).rejects.toBe(last);
     expect(fn).toHaveBeenCalledTimes(3);
   });
 
@@ -139,9 +137,9 @@ describe("retry utilities (TT-026)", () => {
       throw new TransientNetworkError("fail");
     });
 
-    await expect(
-      withRetry(fn, { maxRetries: 0, baseDelayMs: 1 }),
-    ).rejects.toBeInstanceOf(TransientNetworkError);
+    await expect(withRetry(fn, { maxRetries: 0, baseDelayMs: 1 })).rejects.toBeInstanceOf(
+      TransientNetworkError,
+    );
     expect(fn).toHaveBeenCalledTimes(1);
   });
 
@@ -164,10 +162,14 @@ describe("retry utilities (TT-026)", () => {
       throw new TransientNetworkError("fail");
     });
 
-    const pending = withRetry(fn, { maxRetries: 3, baseDelayMs: 1000 }, {
-      signal: controller.signal,
-      operation: "startBot",
-    });
+    const pending = withRetry(
+      fn,
+      { maxRetries: 3, baseDelayMs: 1000 },
+      {
+        signal: controller.signal,
+        operation: "startBot",
+      },
+    );
 
     await Promise.resolve();
     controller.abort();

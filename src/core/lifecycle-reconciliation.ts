@@ -10,7 +10,10 @@ export function isOperationalInterruption(
 }
 
 /** Allowed revert targets after interrupted `stopBot` (RECONCILIATION-LIFECYCLE.md). */
-export const STOP_ABORT_REVERT_TARGETS: readonly BotLifecycleStatus[] = ["started", "error"] as const;
+export const STOP_ABORT_REVERT_TARGETS: readonly BotLifecycleStatus[] = [
+  "started",
+  "error",
+] as const;
 
 export function isStopAbortRevertTarget(status: BotLifecycleStatus): boolean {
   return (STOP_ABORT_REVERT_TARGETS as readonly string[]).includes(status);

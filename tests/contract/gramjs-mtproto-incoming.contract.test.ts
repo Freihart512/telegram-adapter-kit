@@ -11,7 +11,10 @@ import {
   SubscriptionAlreadyExistsError,
   SubscriptionNotFoundError,
 } from "../../src/index.js";
-import type { GramJsEventHandler, GramJsMtprotoClient } from "../../src/adapters/telegram/mtproto/gramjs-adapter.js";
+import type {
+  GramJsEventHandler,
+  GramJsMtprotoClient,
+} from "../../src/adapters/telegram/mtproto/gramjs-adapter.js";
 
 function mtprotoInput(botId: string) {
   return {
@@ -61,7 +64,11 @@ function makeRawEvent(overrides?: Partial<NonNullable<GramJsRawEvent["message"]>
   };
 }
 
-function binding(botId: string, bindingId: string, chatId: bigint | number | string = 100n): RegisterSubscriptionInput {
+function binding(
+  botId: string,
+  bindingId: string,
+  chatId: bigint | number | string = 100n,
+): RegisterSubscriptionInput {
   return { bindingId, botId, chatId };
 }
 
@@ -111,7 +118,12 @@ describe("GramJsMtprotoAdapter incoming bindings (TT-022)", () => {
     await adapter.startBot("b1");
 
     const received: IncomingMessageEvent[] = [];
-    const sub: RegisterSubscriptionInput = { bindingId: "s1", botId: "b1", chatId: 100n, topicId: 5 };
+    const sub: RegisterSubscriptionInput = {
+      bindingId: "s1",
+      botId: "b1",
+      chatId: 100n,
+      topicId: 5,
+    };
     await adapter.bindIncomingMessages(sub, (e) => received.push(e));
 
     client.emit(makeRawEvent({ replyTo: { replyToTopId: 5, replyToMsgId: 1 } }));
@@ -186,9 +198,9 @@ describe("GramJsMtprotoAdapter incoming bindings (TT-022)", () => {
 
   it("rejects unbind for unknown binding", async () => {
     const adapter = new GramJsMtprotoAdapter(() => createMockClient());
-    await expect(
-      adapter.unbindIncomingMessages("does-not-exist"),
-    ).rejects.toBeInstanceOf(SubscriptionNotFoundError);
+    await expect(adapter.unbindIncomingMessages("does-not-exist")).rejects.toBeInstanceOf(
+      SubscriptionNotFoundError,
+    );
   });
 
   it("stopBot removes all bindings", async () => {
@@ -305,13 +317,11 @@ describe("GramJsMtprotoAdapter incoming bindings (TT-022)", () => {
     await adapter.registerBot(mtprotoInput("b1"));
     await adapter.startBot("b1");
 
-    await expect(
-      adapter.bindIncomingMessages(binding("b1", "s1"), () => {}),
-    ).rejects.toThrow();
+    await expect(adapter.bindIncomingMessages(binding("b1", "s1"), () => {})).rejects.toThrow();
 
-    await expect(
-      adapter.unbindIncomingMessages("s1"),
-    ).rejects.toBeInstanceOf(SubscriptionNotFoundError);
+    await expect(adapter.unbindIncomingMessages("s1")).rejects.toBeInstanceOf(
+      SubscriptionNotFoundError,
+    );
   });
 
   it("removeAllBindings continues even if removeEventHandler throws", async () => {

@@ -17,6 +17,7 @@ import type {
 import type { TelegramRuntimeSdk } from "../contracts/sdk.js";
 import { BotNotFoundError } from "../errors/bot-not-found-error.js";
 import { BotNotStartedError } from "../errors/bot-not-started-error.js";
+import { LifecycleConflictError } from "../errors/lifecycle-conflict-error.js";
 import { mapUnknownToSdkError } from "../errors/map-external.js";
 import { SubscriptionNotFoundError } from "../errors/subscription-not-found-error.js";
 import { NoopLogger } from "../observability/noop-logger.js";
@@ -37,11 +38,7 @@ import {
 import { withOperationControl } from "../utils/operation-control.js";
 import { withTimeout } from "../utils/timeout.js";
 import type { RuntimeOperationKind } from "../utils/operation-retry-policy.js";
-import {
-  DEFAULT_RETRY_POLICY,
-  normalizeRetryPolicy,
-  type RetryPolicy,
-} from "../utils/retry.js";
+import { DEFAULT_RETRY_POLICY, normalizeRetryPolicy, type RetryPolicy } from "../utils/retry.js";
 
 export type RuntimeManagerDeps = Readonly<{
   botRegistry?: BotRegistry;
@@ -107,22 +104,25 @@ export class RuntimeManager implements TelegramRuntimeSdk {
   async unregisterBot(botId: string, options?: OperationOptions): Promise<void> {
     validateBotId(botId);
     validateOperationOptions(options);
-    this.requireBot(botId);
+    const rec = this.requireBot(botId);
+    this.assertBotUnregisterable(rec.status, botId);
+
     const adapter = this.adapterForBot(botId);
     const bindings = this.subscriptions.listByBotId(botId);
-    this.logger.debug("unregisterBot requested", { botId, bindingCount: bindings.length });
+    this.logger.debug("unregisterBot requested", {
+      botId,
+      bindingCount: bindings.length,
+      status: rec.status,
+    });
 
-    for (const binding of bindings) {
-      await this.guard(
-        () => adapter.unbindIncomingMessages(binding.bindingId, options),
-        "unbindIncomingMessages",
-        { botId, bindingId: binding.bindingId },
-        options,
-      );
-    }
-
-    await this.guard(() => adapter.unregisterBot(botId, options), "unregisterBot", { botId }, options);
+    // cleanupBot must run before unregisterBot while the adapter record still exists.
     await this.guard(() => adapter.cleanupBot(botId, options), "cleanupBot", { botId }, options);
+    await this.guard(
+      () => adapter.unregisterBot(botId, options),
+      "unregisterBot",
+      { botId },
+      options,
+    );
     this.subscriptions.unregisterByBotId(botId);
     this.bots.unregister(botId);
     this.logger.info("bot unregistered", { botId });
@@ -259,13 +259,17 @@ export class RuntimeManager implements TelegramRuntimeSdk {
       });
     }
 
+    const botRec = this.requireBot(binding.botId);
     const adapter = this.adapterForBot(binding.botId);
-    await this.guard(
-      () => adapter.unbindIncomingMessages(bindingId, options),
-      "unbindIncomingMessages",
-      { botId: binding.botId, bindingId },
-      options,
-    );
+    // stopBot clears adapter bindings; only skip unbind for manager states that imply that already happened.
+    if (botRec.status !== BotLifecycle.Registered && botRec.status !== BotLifecycle.Stopped) {
+      await this.guard(
+        () => adapter.unbindIncomingMessages(bindingId, options),
+        "unbindIncomingMessages",
+        { botId: binding.botId, bindingId },
+        options,
+      );
+    }
     this.subscriptions.unregister(bindingId);
     this.logger.info("subscription unregistered", { bindingId, botId: binding.botId });
   }
@@ -335,6 +339,18 @@ export class RuntimeManager implements TelegramRuntimeSdk {
         meta: { botId, status: rec.status },
       });
     }
+  }
+
+  /** Aligns with `BotRegistry` unregister transitions — validate before adapter side effects. */
+  private assertBotUnregisterable(status: BotLifecycleStatus, botId: string): void {
+    if (status === BotLifecycle.Registered || status === BotLifecycle.Stopped) {
+      return;
+    }
+    const message =
+      status === BotLifecycle.Error
+        ? "Resolve error state before unregistering"
+        : "Stop the bot before unregistering";
+    throw new LifecycleConflictError(message, { meta: { botId, status } });
   }
 
   private passesFilter(binding: SubscriptionBinding, event: IncomingMessageEvent): boolean {

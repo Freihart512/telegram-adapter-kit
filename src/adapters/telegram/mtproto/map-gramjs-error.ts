@@ -46,10 +46,13 @@ export function mapGramJsProviderError(
   }
 
   if (isTransientProviderCode(providerCode)) {
-    return new TransientNetworkError("Telegram rate limit, timeout, or transient provider failure", {
-      cause,
-      meta,
-    });
+    return new TransientNetworkError(
+      "Telegram rate limit, timeout, or transient provider failure",
+      {
+        cause,
+        meta,
+      },
+    );
   }
 
   if (isValidationProviderCode(providerCode)) {
