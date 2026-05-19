@@ -1,4 +1,4 @@
-import type { TelegramAdapterResolver } from "../contracts/adapter.js";
+import type { TelegramAdapterResolver, TelegramProviderAdapter } from "../contracts/adapter.js";
 import type { BotLifecycleStatus } from "../contracts/lifecycle.js";
 import type {
   BotStateHandler,
@@ -22,6 +22,7 @@ import { SubscriptionNotFoundError } from "../errors/subscription-not-found-erro
 import { NoopLogger } from "../observability/noop-logger.js";
 import type { Logger } from "../observability/logger.js";
 import { BotLifecycle, BotRegistry } from "./bot-registry.js";
+import { isOperationalInterruption } from "./lifecycle-reconciliation.js";
 import { EventBus } from "./event-bus.js";
 import { SubscriptionRegistry, type SubscriptionBinding } from "./subscription-registry.js";
 import {
@@ -34,6 +35,7 @@ import {
   validateSendMessageInput,
 } from "./validators.js";
 import { withOperationControl } from "../utils/operation-control.js";
+import { withTimeout } from "../utils/timeout.js";
 import type { RuntimeOperationKind } from "../utils/operation-retry-policy.js";
 import {
   DEFAULT_RETRY_POLICY,
@@ -49,6 +51,9 @@ export type RuntimeManagerDeps = Readonly<{
   /** Retry policy for transient failures; defaults to {@link DEFAULT_RETRY_POLICY}. Set `maxRetries: 0` to disable. */
   retryPolicy?: RetryPolicy;
 }>;
+
+/** Max wait for best-effort adapter cleanup after operational interruption (TT-047). */
+const BEST_EFFORT_CLEANUP_TIMEOUT_MS = 5_000;
 
 /** Orchestrates registries, event bus and provider adapter (`TelegramRuntimeSdk`, TRD §5.1, TT-015). */
 export class RuntimeManager implements TelegramRuntimeSdk {
@@ -141,8 +146,14 @@ export class RuntimeManager implements TelegramRuntimeSdk {
     try {
       await this.guard(() => adapter.startBot(botId, options), "startBot", { botId }, options);
     } catch (cause) {
-      this.bots.markError(botId);
-      this.notifyBotState(botId, BotLifecycle.Error, afterBegin.status);
+      if (isOperationalInterruption(cause)) {
+        this.bots.markError(botId);
+        this.notifyBotState(botId, BotLifecycle.Error, BotLifecycle.Starting);
+        this.scheduleBestEffortAdapterCleanup(botId, adapter, "startBot");
+      } else {
+        this.bots.markError(botId);
+        this.notifyBotState(botId, BotLifecycle.Error, afterBegin.status);
+      }
       throw cause;
     }
 
@@ -180,8 +191,13 @@ export class RuntimeManager implements TelegramRuntimeSdk {
     try {
       await this.guard(() => adapter.stopBot(botId, options), "stopBot", { botId }, options);
     } catch (cause) {
-      this.bots.markError(botId);
-      this.notifyBotState(botId, BotLifecycle.Error, mid.status);
+      if (isOperationalInterruption(cause)) {
+        this.bots.abortStop(botId, previousBeforeStop);
+        this.notifyBotState(botId, previousBeforeStop, BotLifecycle.Stopping);
+      } else {
+        this.bots.markError(botId);
+        this.notifyBotState(botId, BotLifecycle.Error, mid.status);
+      }
       throw cause;
     }
 
@@ -328,6 +344,32 @@ export class RuntimeManager implements TelegramRuntimeSdk {
     }
     const text = event.text ?? "";
     return includes.some((fragment) => text.includes(fragment));
+  }
+
+  /**
+   * Fire-and-forget provider cleanup after registry reconciliation (TT-047).
+   * Never blocks rejection of the original operation; uses an internal timeout cap.
+   */
+  private scheduleBestEffortAdapterCleanup(
+    botId: string,
+    adapter: TelegramProviderAdapter,
+    operation: string,
+  ): void {
+    void (async () => {
+      try {
+        await withTimeout(() => adapter.cleanupBot(botId), {
+          timeoutMs: BEST_EFFORT_CLEANUP_TIMEOUT_MS,
+          operation: `${operation}:cleanup`,
+          meta: { botId },
+        });
+      } catch (err) {
+        this.logger.warn("best-effort adapter cleanup failed after operational interruption", {
+          botId,
+          operation,
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
+    })();
   }
 
   private notifyBotState(

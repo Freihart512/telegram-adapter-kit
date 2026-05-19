@@ -4,6 +4,7 @@ import type { RegisterBotInput } from "../contracts/operations.js";
 import { BotAlreadyExistsError } from "../errors/bot-already-exists-error.js";
 import { BotNotFoundError } from "../errors/bot-not-found-error.js";
 import { LifecycleConflictError } from "../errors/lifecycle-conflict-error.js";
+import { isStopAbortRevertTarget } from "./lifecycle-reconciliation.js";
 
 export const BotLifecycle = {
   Registered: "registered",
@@ -280,6 +281,25 @@ export class BotRegistry {
     const decision = MARK_ERROR_TRANSITIONS[rec.status];
 
     this.applyDecision(botId, rec, decision);
+  }
+
+  /**
+   * Reverts an interrupted `stopBot` from `stopping` (TT-047).
+   * @param revertTo — status before `beginStop` (`started` or `error`).
+   */
+  abortStop(botId: string, revertTo: BotLifecycleStatus): void {
+    const rec = this.require(botId);
+    if (rec.status !== BotLifecycle.Stopping) {
+      throw new LifecycleConflictError("abortStop requires status stopping", {
+        meta: { botId, status: rec.status },
+      });
+    }
+    if (!isStopAbortRevertTarget(revertTo)) {
+      throw new LifecycleConflictError("abortStop invalid revert target", {
+        meta: { botId, status: rec.status, revertTo },
+      });
+    }
+    rec.status = revertTo;
   }
 
   private applyDecision(botId: string, rec: MutableBotRecord, decision: TransitionDecision): void {
