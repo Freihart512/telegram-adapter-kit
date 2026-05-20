@@ -47,6 +47,8 @@ export type RuntimeManagerDeps = Readonly<{
   logger?: Logger;
   /** Retry policy for transient failures; defaults to {@link DEFAULT_RETRY_POLICY}. Set `maxRetries: 0` to disable. */
   retryPolicy?: RetryPolicy;
+  /** When true, merges TT-048 per-operation `maxDelayMs` / jitter overlays in `guard()`. Default false. */
+  applyOperationBackoffOverlays?: boolean;
 }>;
 
 /** Max wait for best-effort adapter cleanup after operational interruption (TT-047). */
@@ -59,6 +61,7 @@ export class RuntimeManager implements TelegramRuntimeSdk {
   private readonly bus: EventBus;
   private readonly logger: Logger;
   private readonly retryPolicy: RetryPolicy;
+  private readonly applyOperationBackoffOverlays: boolean;
 
   constructor(
     private readonly resolver: TelegramAdapterResolver,
@@ -68,6 +71,7 @@ export class RuntimeManager implements TelegramRuntimeSdk {
     this.bus = deps?.eventBus ?? new EventBus();
     this.logger = deps?.logger ?? new NoopLogger();
     this.retryPolicy = normalizeRetryPolicy(deps?.retryPolicy ?? DEFAULT_RETRY_POLICY);
+    this.applyOperationBackoffOverlays = deps?.applyOperationBackoffOverlays ?? false;
     this.subscriptions =
       deps?.subscriptionRegistry ??
       new SubscriptionRegistry((botId) => this.bots.get(botId) !== undefined);
@@ -415,6 +419,7 @@ export class RuntimeManager implements TelegramRuntimeSdk {
     try {
       return await withOperationControl(fn, operation, {
         defaultRetryPolicy: this.retryPolicy,
+        applyOperationBackoffOverlays: this.applyOperationBackoffOverlays,
         operationOptions: options,
         logger: this.logger,
         meta,
