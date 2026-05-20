@@ -49,9 +49,22 @@ export {
   DEFAULT_RETRY_POLICY,
   isTransientSdkError,
   normalizeRetryPolicy,
+  RETRY_POLICY_PRESETS,
   withRetry,
 } from "./utils/retry.js";
-export type { RetryPolicy, WithRetryOptions } from "./utils/retry.js";
+export type {
+  ComputeBackoffDelayOptions,
+  JitterStrategy,
+  RetryPolicy,
+  WithRetryOptions,
+} from "./utils/retry.js";
+export {
+  applyOperationBackoffOverlay,
+  OPERATION_BACKOFF_OVERLAYS,
+  resolveRetryPolicyForOperation,
+  SEND_MESSAGE_RETRY_POLICY,
+} from "./utils/operation-retry-policy.js";
+export type { RuntimeOperationKind } from "./utils/operation-retry-policy.js";
 export {
   MAX_MESSAGE_TEXT_LENGTH,
   validateBindingId,

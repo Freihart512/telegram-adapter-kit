@@ -29,14 +29,44 @@ describe("retry utilities (TT-026)", () => {
     expect(computeBackoffDelayMs(2, -50)).toBe(0);
   });
 
+  it("normalizes non-finite policy fields safely", () => {
+    expect(
+      normalizeRetryPolicy({
+        maxRetries: Infinity,
+        baseDelayMs: NaN,
+        maxDelayMs: -Infinity,
+      }),
+    ).toEqual({
+      maxRetries: 0,
+      baseDelayMs: 0,
+      maxDelayMs: 0,
+      jitter: "none",
+    });
+  });
+
   it("normalizes invalid retry policy values", () => {
     expect(normalizeRetryPolicy({ maxRetries: -10, baseDelayMs: -100 })).toEqual({
       maxRetries: 0,
       baseDelayMs: 0,
+      jitter: "none",
     });
     expect(normalizeRetryPolicy({ maxRetries: 2.9, baseDelayMs: 99.1 })).toEqual({
       maxRetries: 2,
       baseDelayMs: 99,
+      jitter: "none",
+    });
+    expect(
+      normalizeRetryPolicy({
+        maxRetries: 1,
+        baseDelayMs: 100,
+        maxDelayMs: -50,
+        jitter: "bogus" as "full",
+      }),
+    ).toEqual({
+      maxRetries: 1,
+      baseDelayMs: 100,
+      maxDelayMs: 0,
+      jitter: "none",
     });
   });
 
@@ -153,6 +183,90 @@ describe("retry utilities (TT-026)", () => {
     ).rejects.toBeInstanceOf(OperationCancelledError);
 
     expect(fn).not.toHaveBeenCalled();
+  });
+
+  describe("backoff hardening (TT-048)", () => {
+    it("keeps legacy exponential delays when jitter and maxDelayMs are omitted", () => {
+      expect(computeBackoffDelayMs(0, 100)).toBe(100);
+      expect(computeBackoffDelayMs(2, 100)).toBe(400);
+    });
+
+    it("caps delay with maxDelayMs", () => {
+      expect(computeBackoffDelayMs(5, 250, { maxDelayMs: 1_000 })).toBe(1_000);
+      expect(computeBackoffDelayMs(1, 100, { maxDelayMs: 150 })).toBe(150);
+    });
+
+    it("applies full jitter with deterministic random", () => {
+      const random = () => 0.5;
+      // attempt 5 → 3200ms raw, capped to 1000, full jitter at 0.5 → 500
+      expect(computeBackoffDelayMs(5, 100, { maxDelayMs: 1_000, jitter: "full", random })).toBe(
+        500,
+      );
+      // below cap: attempt 2 → 400ms, full jitter at 0.5 → 200
+      expect(computeBackoffDelayMs(2, 100, { maxDelayMs: 1_000, jitter: "full", random })).toBe(
+        200,
+      );
+    });
+
+    it("applies equal jitter with deterministic random", () => {
+      const random = vi.fn().mockReturnValue(0);
+      expect(computeBackoffDelayMs(3, 100, { maxDelayMs: 800, jitter: "equal", random })).toBe(400);
+
+      random.mockReturnValue(1);
+      expect(computeBackoffDelayMs(3, 100, { maxDelayMs: 800, jitter: "equal", random })).toBe(800);
+    });
+
+    it("produces spread delays with full jitter across random values", () => {
+      const capped = 1_000;
+      const samples = [0, 0.25, 0.5, 0.75, 1].map((value) =>
+        computeBackoffDelayMs(4, 100, {
+          maxDelayMs: capped,
+          jitter: "full",
+          random: () => value,
+        }),
+      );
+      expect(Math.min(...samples)).toBe(0);
+      expect(Math.max(...samples)).toBe(capped);
+      expect(new Set(samples).size).toBeGreaterThan(1);
+    });
+
+    it("never exceeds maxDelayMs with jitter", () => {
+      for (let i = 0; i < 20; i++) {
+        const delay = computeBackoffDelayMs(10, 500, {
+          maxDelayMs: 2_000,
+          jitter: "equal",
+          random: () => i / 20,
+        });
+        expect(delay).toBeLessThanOrEqual(2_000);
+      }
+    });
+
+    it("hardens direct computeBackoffDelayMs options from invalid JS values", () => {
+      expect(
+        computeBackoffDelayMs(2, 100, {
+          maxDelayMs: NaN,
+          jitter: "bogus" as "equal",
+          random: () => NaN,
+        }),
+      ).toBe(0);
+
+      expect(
+        computeBackoffDelayMs(2, 100, {
+          maxDelayMs: 500,
+          jitter: "bogus" as "equal",
+        }),
+      ).toBe(400);
+
+      expect(
+        computeBackoffDelayMs(Infinity, 100, {
+          maxDelayMs: 500,
+          jitter: "equal",
+          random: () => Infinity,
+        }),
+      ).toBeLessThanOrEqual(500);
+
+      expect(computeBackoffDelayMs(1, -50, { maxDelayMs: Infinity })).toBe(0);
+    });
   });
 
   it("aborts during backoff when signal is aborted", async () => {

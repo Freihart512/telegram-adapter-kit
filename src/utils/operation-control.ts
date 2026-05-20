@@ -9,6 +9,7 @@ import { withTimeout } from "./timeout.js";
 
 export type WithOperationControlDeps = Readonly<{
   defaultRetryPolicy: RetryPolicy;
+  applyOperationBackoffOverlays?: boolean;
   operationOptions?: OperationOptions;
   logger?: Logger;
   meta?: Readonly<Record<string, unknown>>;
@@ -25,7 +26,9 @@ export async function withOperationControl<T>(
   operation: RuntimeOperationKind,
   deps: WithOperationControlDeps,
 ): Promise<T> {
-  const retryPolicy = resolveRetryPolicyForOperation(operation, deps.defaultRetryPolicy);
+  const retryPolicy = resolveRetryPolicyForOperation(operation, deps.defaultRetryPolicy, {
+    applyOverlays: deps.applyOperationBackoffOverlays,
+  });
 
   return withRetry(
     () =>
