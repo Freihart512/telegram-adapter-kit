@@ -31,6 +31,20 @@ export { SubscriptionRegistry } from "./core/subscription-registry.js";
 export type { SubscriptionBinding } from "./core/subscription-registry.js";
 export { RuntimeManager, createRuntimeManager } from "./core/runtime-manager.js";
 export type { RuntimeManagerDeps } from "./core/runtime-manager.js";
+export {
+  BotApiAdapter,
+  defaultGrammyBotClientFactory,
+} from "./adapters/telegram/bot-api/bot-api-adapter.js";
+export type {
+  GrammyBotClient,
+  GrammyBotClientFactory,
+  GrammyMessageContext,
+  GrammyMessageHandler,
+  GrammySendMessageParams,
+  GrammySendMessageRawResult,
+} from "./adapters/telegram/bot-api/bot-api-adapter.js";
+export type { BotApiErrorMapContext } from "./adapters/telegram/bot-api/map-bot-api-error.js";
+export { mapBotApiProviderError } from "./adapters/telegram/bot-api/map-bot-api-error.js";
 export { GramJsMtprotoAdapter } from "./adapters/telegram/mtproto/gramjs-adapter.js";
 export type {
   GramJsEventHandler,
