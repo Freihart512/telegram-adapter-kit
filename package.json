@@ -66,6 +66,7 @@
     "vitest": "^3.1.2"
   },
   "dependencies": {
+    "grammy": "^1.43.0",
     "telegram": "^2.26.22"
   }
 }

@@ -13,8 +13,7 @@ const ADAPTER_CONTRACT_METHODS = [
   "cleanupBot",
 ] as const satisfies readonly (keyof TelegramProviderAdapter)[];
 
-/** GramJS MTProto contract files and primary coverage (see Documentacion/CONTRACT-TESTS.md). */
-const GRAMJS_MTPROTO_CONTRACT_FILES = [
+const ADAPTER_CONTRACT_FILES = [
   {
     file: "gramjs-mtproto-lifecycle.contract.test.ts",
     methods: ["registerBot", "unregisterBot", "startBot", "stopBot", "cleanupBot"],
@@ -31,16 +30,28 @@ const GRAMJS_MTPROTO_CONTRACT_FILES = [
     file: "gramjs-mtproto-errors.contract.test.ts",
     methods: ["startBot", "sendMessage"],
   },
+  {
+    file: "grammy-bot-api-lifecycle.contract.test.ts",
+    methods: ["registerBot", "unregisterBot", "startBot", "stopBot", "cleanupBot"],
+  },
+  {
+    file: "grammy-bot-api-incoming.contract.test.ts",
+    methods: ["bindIncomingMessages", "unbindIncomingMessages"],
+  },
+  {
+    file: "grammy-bot-api-send.contract.test.ts",
+    methods: ["sendMessage"],
+  },
 ] as const;
 
-describe("TelegramProviderAdapter contract suite (TT-027)", () => {
+describe("TelegramProviderAdapter contract suite (TT-027 / TT-028)", () => {
   it("lists all adapter contract methods", () => {
     expect(ADAPTER_CONTRACT_METHODS).toHaveLength(8);
   });
 
-  it("maps every contract method to at least one GramJS contract file", () => {
+  it("maps every contract method to at least one adapter contract file", () => {
     const covered = new Set<string>();
-    for (const entry of GRAMJS_MTPROTO_CONTRACT_FILES) {
+    for (const entry of ADAPTER_CONTRACT_FILES) {
       for (const method of entry.methods) {
         covered.add(method);
       }

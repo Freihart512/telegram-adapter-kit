@@ -16,7 +16,7 @@ No se requieren credenciales de Telegram: la suite usa un **harness** con client
 | Adapter | Estado | Ubicacion |
 |---------|--------|-----------|
 | GramJS MTProto | Cubierto | `tests/contract/gramjs-mtproto-*.contract.test.ts` |
-| Bot API (grammY) | Pendiente (`TT-028`) | Se anadira cuando exista `BotApiAdapter` |
+| Bot API (grammY) | Cubierto | `tests/contract/grammy-bot-api-*.contract.test.ts` |
 
 ## Trazabilidad UC → escenarios
 
