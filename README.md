@@ -42,20 +42,21 @@ npm install @your-scope/telegram-adapter-kit
 
 ## Quick start (illustrative)
 
-The public API is built around **`createRuntimeManager` / `RuntimeManager`** (`TelegramRuntimeSdk`, **TT-015**) and a **`TelegramAdapterResolver`** that wires GramJS/Bot API adapters (**TT-027+**). Example shape:
+The public API is built around **`createRuntimeManager` / `RuntimeManager`** (`TelegramRuntimeSdk`, **TT-015**) and a **`TelegramAdapterResolver`** that wires GramJS/Bot API adapters (**TT-029**). Example with the default resolver:
 
 ```ts
 import {
+  BotRegistry,
+  createDefaultTelegramAdapterResolverForRegistry,
   createRuntimeManager,
-  type TelegramAdapterResolver,
 } from "@your-scope/telegram-adapter-kit";
 
-const resolver = {
-  resolve: (input) => myAdapterFor(input.credentials.kind),
-  resolveByBotId: (botId) => adapterFor(botId),
-} satisfies TelegramAdapterResolver;
-
-const runtime = createRuntimeManager(resolver);
+// One BotRegistry for both resolver and runtime (required — see ADAPTER-RESOLVER.md).
+const bots = new BotRegistry();
+const resolver = createDefaultTelegramAdapterResolverForRegistry(bots, {
+  mtprotoClientFactory: (credentials) => createGramJsClient(credentials),
+});
+const runtime = createRuntimeManager(resolver, { botRegistry: bots });
 
 // MTProto (GramJS)
 await runtime.registerBot({
@@ -85,6 +86,8 @@ await runtime.registerSubscription({
 runtime.onMessage((event) => {
   // normalized incoming event
 });
+
+> **Important:** `bots` must be the **same** `BotRegistry` passed to `createDefaultTelegramAdapterResolverForRegistry` and to `createRuntimeManager`. Using two instances breaks adapter routing after `registerBot`.
 
 await runtime.sendMessage({
   botId: "alerts-bot",
@@ -119,6 +122,7 @@ const runtime = createRuntimeManager(resolver, { logger });
 | [PRD](Documentacion/PRD-telegram-runtime-sdk.md)         | Vision, MVP scope, acceptance criteria                                                                                                                                                                                                                                                                                                                                                  |
 | [TRD](Documentacion/TRD-telegram-runtime-sdk.md)         | Architecture, adapters, testing, release                                                                                                                                                                                                                                                                                                                                                |
 | [Backlog](Documentacion/BACKLOG-telegram-runtime-sdk.md) | Traceable tasks (UC / TT)                                                                                                                                                                                                                                                                                                                                                               |
+| [Adapter resolver](Documentacion/ADAPTER-RESOLVER.md)    | Default resolver wiring; **shared `BotRegistry`** requirement (**TT-029**)                                                                                                                                                                                                                                                                                                              |
 | [RELEASING.md](RELEASING.md)                             | Semver, Changesets, maintainer release flow (**TT-006**)                                                                                                                                                                                                                                                                                                                                |
 | [CHANGELOG.md](CHANGELOG.md)                             | Release history (updated by Changesets)                                                                                                                                                                                                                                                                                                                                                 |
 | Contracts (`src/contracts/`)                             | Public SDK + internal adapter types (**TT-010**, TRD §5)                                                                                                                                                                                                                                                                                                                                |

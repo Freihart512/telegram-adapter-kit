@@ -45,6 +45,11 @@ export type {
 } from "./adapters/telegram/bot-api/bot-api-adapter.js";
 export type { BotApiErrorMapContext } from "./adapters/telegram/bot-api/map-bot-api-error.js";
 export { mapBotApiProviderError } from "./adapters/telegram/bot-api/map-bot-api-error.js";
+export {
+  createDefaultTelegramAdapterResolverForRegistry,
+  DefaultTelegramAdapterResolver,
+} from "./adapters/telegram/adapter-resolver.js";
+export type { DefaultTelegramAdapterResolverDeps } from "./adapters/telegram/adapter-resolver.js";
 export { GramJsMtprotoAdapter } from "./adapters/telegram/mtproto/gramjs-adapter.js";
 export type {
   GramJsEventHandler,
