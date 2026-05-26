@@ -52,6 +52,10 @@ function createMockClient(): MockClient {
   };
 }
 
+function channelBindingChatId(internalId: bigint | number): bigint {
+  return BigInt(`-100${internalId}`);
+}
+
 function makeRawEvent(overrides?: Partial<NonNullable<GramJsRawEvent["message"]>>): GramJsRawEvent {
   return {
     message: {
@@ -67,7 +71,7 @@ function makeRawEvent(overrides?: Partial<NonNullable<GramJsRawEvent["message"]>
 function binding(
   botId: string,
   bindingId: string,
-  chatId: bigint | number | string = 100n,
+  chatId: bigint | number | string = channelBindingChatId(100),
 ): RegisterSubscriptionInput {
   return { bindingId, botId, chatId };
 }
@@ -87,12 +91,36 @@ describe("GramJsMtprotoAdapter incoming bindings (TT-022)", () => {
     expect(received).toHaveLength(1);
     expect(received[0]).toMatchObject({
       botId: "b1",
-      chatId: "100",
+      chatId: "-100100",
       messageId: 42,
       text: "hello world",
     });
     expect(received[0]!.date).toBeInstanceOf(Date);
     expect(received[0]!.raw).toBeDefined();
+  });
+
+  it("matches binding chatId -100… with GramJS channelId peer", async () => {
+    const client = createMockClient();
+    const adapter = new GramJsMtprotoAdapter(() => client);
+    await adapter.registerBot(mtprotoInput("b1"));
+    await adapter.startBot("b1");
+
+    const received: IncomingMessageEvent[] = [];
+    await adapter.bindIncomingMessages(
+      { bindingId: "s1", botId: "b1", chatId: -1002593336332n },
+      (e) => received.push(e),
+    );
+
+    client.emit(
+      makeRawEvent({
+        peerId: { channelId: 2593336332n },
+        message: "from channel",
+      }),
+    );
+
+    expect(received).toHaveLength(1);
+    expect(received[0]!.chatId).toBe("-1002593336332");
+    expect(received[0]!.text).toBe("from channel");
   });
 
   it("filters events by chatId", async () => {
@@ -102,13 +130,15 @@ describe("GramJsMtprotoAdapter incoming bindings (TT-022)", () => {
     await adapter.startBot("b1");
 
     const received: IncomingMessageEvent[] = [];
-    await adapter.bindIncomingMessages(binding("b1", "s1", 200n), (e) => received.push(e));
+    await adapter.bindIncomingMessages(binding("b1", "s1", channelBindingChatId(200)), (e) =>
+      received.push(e),
+    );
 
     client.emit(makeRawEvent({ peerId: { channelId: 100n } }));
     client.emit(makeRawEvent({ peerId: { channelId: 200n } }));
 
     expect(received).toHaveLength(1);
-    expect(received[0]!.chatId).toBe("200");
+    expect(received[0]!.chatId).toBe("-100200");
   });
 
   it("filters events by topicId when specified", async () => {
@@ -121,7 +151,7 @@ describe("GramJsMtprotoAdapter incoming bindings (TT-022)", () => {
     const sub: RegisterSubscriptionInput = {
       bindingId: "s1",
       botId: "b1",
-      chatId: 100n,
+      chatId: channelBindingChatId(100),
       topicId: 5,
     };
     await adapter.bindIncomingMessages(sub, (e) => received.push(e));
@@ -144,7 +174,7 @@ describe("GramJsMtprotoAdapter incoming bindings (TT-022)", () => {
     const sub: RegisterSubscriptionInput = {
       bindingId: "s1",
       botId: "b1",
-      chatId: 100n,
+      chatId: channelBindingChatId(100),
       filters: { textIncludes: ["important"] },
     };
     await adapter.bindIncomingMessages(sub, (e) => received.push(e));
@@ -211,7 +241,9 @@ describe("GramJsMtprotoAdapter incoming bindings (TT-022)", () => {
 
     const received: IncomingMessageEvent[] = [];
     await adapter.bindIncomingMessages(binding("b1", "s1"), (e) => received.push(e));
-    await adapter.bindIncomingMessages(binding("b1", "s2", 200n), (e) => received.push(e));
+    await adapter.bindIncomingMessages(binding("b1", "s2", channelBindingChatId(200)), (e) =>
+      received.push(e),
+    );
 
     await adapter.stopBot("b1");
 
@@ -251,8 +283,12 @@ describe("GramJsMtprotoAdapter incoming bindings (TT-022)", () => {
     const eventsA: IncomingMessageEvent[] = [];
     const eventsB: IncomingMessageEvent[] = [];
 
-    await adapter.bindIncomingMessages(binding("a", "sa", 100n), (e) => eventsA.push(e));
-    await adapter.bindIncomingMessages(binding("b", "sb", 200n), (e) => eventsB.push(e));
+    await adapter.bindIncomingMessages(binding("a", "sa", channelBindingChatId(100)), (e) =>
+      eventsA.push(e),
+    );
+    await adapter.bindIncomingMessages(binding("b", "sb", channelBindingChatId(200)), (e) =>
+      eventsB.push(e),
+    );
 
     clientA.emit(makeRawEvent({ peerId: { channelId: 100n } }));
     clientB.emit(makeRawEvent({ peerId: { channelId: 200n } }));
@@ -285,11 +321,39 @@ describe("GramJsMtprotoAdapter incoming bindings (TT-022)", () => {
     await adapter.startBot("b1");
 
     const received: IncomingMessageEvent[] = [];
-    await adapter.bindIncomingMessages(binding("b1", "s1", 55n), (e) => received.push(e));
+    await adapter.bindIncomingMessages(binding("b1", "s1", -55n), (e) => received.push(e));
 
     client.emit(makeRawEvent({ peerId: { chatId: 55n } }));
     expect(received).toHaveLength(1);
-    expect(received[0]!.chatId).toBe("55");
+    expect(received[0]!.chatId).toBe("-55");
+  });
+
+  it("does not cross-match basic group binding with user peer of same numeric id", async () => {
+    const client = createMockClient();
+    const adapter = new GramJsMtprotoAdapter(() => client);
+    await adapter.registerBot(mtprotoInput("b1"));
+    await adapter.startBot("b1");
+
+    const received: IncomingMessageEvent[] = [];
+    await adapter.bindIncomingMessages(binding("b1", "s1", -123n), (e) => received.push(e));
+
+    client.emit(makeRawEvent({ peerId: { userId: 123n } }));
+
+    expect(received).toHaveLength(0);
+  });
+
+  it("does not cross-match user binding with channel peer sharing numeric id", async () => {
+    const client = createMockClient();
+    const adapter = new GramJsMtprotoAdapter(() => client);
+    await adapter.registerBot(mtprotoInput("b1"));
+    await adapter.startBot("b1");
+
+    const received: IncomingMessageEvent[] = [];
+    await adapter.bindIncomingMessages(binding("b1", "s1", 123n), (e) => received.push(e));
+
+    client.emit(makeRawEvent({ peerId: { channelId: 123n } }));
+
+    expect(received).toHaveLength(0);
   });
 
   it("rejects bind when client lacks addEventHandler", async () => {
@@ -335,7 +399,7 @@ describe("GramJsMtprotoAdapter incoming bindings (TT-022)", () => {
     await adapter.startBot("b1");
 
     await adapter.bindIncomingMessages(binding("b1", "s1"), () => {});
-    await adapter.bindIncomingMessages(binding("b1", "s2", 200n), () => {});
+    await adapter.bindIncomingMessages(binding("b1", "s2", channelBindingChatId(200)), () => {});
 
     await adapter.stopBot("b1");
 

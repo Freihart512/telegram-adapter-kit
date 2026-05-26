@@ -115,6 +115,14 @@ const logger: Logger = {
 const runtime = createRuntimeManager(resolver, { logger });
 ```
 
+## Examples
+
+| Example | Description |
+| ------- | ----------- |
+| [basic-runtime](examples/basic-runtime/) | Bot API: register, start, subscribe, send (`npm run example:basic`) — **TT-041** |
+| [mtproto-runtime](examples/mtproto-runtime/) | MTProto + `stringSession`: same E2E flow (`npm run example:mtproto`) — **TT-041** |
+| [GramJS string session](scripts/README.md) | Generate `TG_STRING_SESSION`: `npm run script:gramjs-session` |
+
 ## Documentation
 
 | Document                                                 | Purpose                                                                                                                                                                                                                                                                                                                                                                                 |
