@@ -1,3 +1,4 @@
+import { sanitizeString } from "../observability/secret-masking.js";
 import { TelegramSdkError } from "./base.js";
 import { TransientNetworkError } from "./transient-network-error.js";
 import { ValidationError } from "./validation-error.js";
@@ -11,10 +12,10 @@ export function mapUnknownToSdkError(error: unknown): TelegramSdkError {
     return error;
   }
   if (typeof error === "string") {
-    return new ValidationError(error);
+    return new ValidationError(sanitizeString(error));
   }
   if (error instanceof Error) {
-    return new TransientNetworkError(error.message || "Network or provider error", {
+    return new TransientNetworkError(sanitizeString(error.message || "Network or provider error"), {
       cause: error,
     });
   }

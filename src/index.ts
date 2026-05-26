@@ -63,6 +63,15 @@ export type { GramJsErrorMapContext } from "./adapters/telegram/mtproto/map-gram
 export { mapGramJsProviderError } from "./adapters/telegram/mtproto/map-gramjs-error.js";
 export { NoopLogger } from "./observability/noop-logger.js";
 export type { Logger } from "./observability/logger.js";
+export { createSafeLogger } from "./observability/safe-logger.js";
+export {
+  maskApiHash,
+  maskBotToken,
+  maskSecret,
+  maskStringSession,
+  sanitizeLogMeta,
+  sanitizeString,
+} from "./observability/secret-masking.js";
 export {
   computeBackoffDelayMs,
   DEFAULT_RETRY_POLICY,

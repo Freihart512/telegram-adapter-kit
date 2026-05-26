@@ -21,6 +21,7 @@ import { SubscriptionNotFoundError } from "../../../errors/subscription-not-foun
 import { mapGramJsProviderError } from "./map-gramjs-error.js";
 import type { Logger } from "../../../observability/logger.js";
 import { NoopLogger } from "../../../observability/noop-logger.js";
+import { createSafeLogger } from "../../../observability/safe-logger.js";
 
 /** Raw GramJS event payload passed to event handlers. */
 export type GramJsRawEvent = {
@@ -157,7 +158,7 @@ export class GramJsMtprotoAdapter implements TelegramProviderAdapter {
     deps?: { capabilities?: TelegramAdapterCapabilities; logger?: Logger },
   ) {
     this.capabilities = deps?.capabilities ?? DEFAULT_CAPABILITIES;
-    this.logger = deps?.logger ?? new NoopLogger();
+    this.logger = createSafeLogger(deps?.logger ?? new NoopLogger());
   }
 
   async registerBot(input: RegisterBotInput): Promise<void> {
@@ -178,7 +179,13 @@ export class GramJsMtprotoAdapter implements TelegramProviderAdapter {
       status: BotLifecycle.Registered,
       bindings: new Map(),
     });
-    this.logger.info("mtproto client registered", { botId, runtimeKind: this.kind });
+    this.logger.info("mtproto client registered", {
+      botId,
+      runtimeKind: this.kind,
+      apiId: input.credentials.apiId,
+      apiHash: input.credentials.apiHash,
+      stringSession: input.credentials.stringSession,
+    });
   }
 
   async unregisterBot(botId: string): Promise<void> {

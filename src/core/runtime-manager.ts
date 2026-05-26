@@ -20,8 +20,9 @@ import { BotNotStartedError } from "../errors/bot-not-started-error.js";
 import { LifecycleConflictError } from "../errors/lifecycle-conflict-error.js";
 import { mapUnknownToSdkError } from "../errors/map-external.js";
 import { SubscriptionNotFoundError } from "../errors/subscription-not-found-error.js";
-import { NoopLogger } from "../observability/noop-logger.js";
 import type { Logger } from "../observability/logger.js";
+import { NoopLogger } from "../observability/noop-logger.js";
+import { createSafeLogger } from "../observability/safe-logger.js";
 import { BotLifecycle, BotRegistry } from "./bot-registry.js";
 import { isOperationalInterruption } from "./lifecycle-reconciliation.js";
 import { EventBus } from "./event-bus.js";
@@ -69,7 +70,7 @@ export class RuntimeManager implements TelegramRuntimeSdk {
   ) {
     this.bots = deps?.botRegistry ?? new BotRegistry();
     this.bus = deps?.eventBus ?? new EventBus();
-    this.logger = deps?.logger ?? new NoopLogger();
+    this.logger = createSafeLogger(deps?.logger ?? new NoopLogger());
     this.retryPolicy = normalizeRetryPolicy(deps?.retryPolicy ?? DEFAULT_RETRY_POLICY);
     this.applyOperationBackoffOverlays = deps?.applyOperationBackoffOverlays ?? false;
     this.subscriptions =

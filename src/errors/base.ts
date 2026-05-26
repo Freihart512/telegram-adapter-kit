@@ -1,4 +1,5 @@
 import type { TelegramRuntimeError } from "../contracts/events.js";
+import { sanitizeLogMeta, sanitizeString } from "../observability/secret-masking.js";
 
 /** Optional, non-secret diagnostic fields (no tokens or session material). */
 export type SdkErrorMeta = Readonly<Record<string, unknown>>;
@@ -13,9 +14,12 @@ export abstract class TelegramSdkError extends Error implements TelegramRuntimeE
   readonly meta?: SdkErrorMeta;
 
   constructor(message: string, options?: { cause?: unknown; meta?: SdkErrorMeta }) {
-    super(message, options?.cause !== undefined ? { cause: options.cause } : undefined);
+    super(
+      sanitizeString(message),
+      options?.cause !== undefined ? { cause: options.cause } : undefined,
+    );
     this.name = new.target.name;
-    this.meta = options?.meta;
+    this.meta = sanitizeLogMeta(options?.meta as Record<string, unknown> | undefined);
     Object.setPrototypeOf(this, new.target.prototype);
   }
 }

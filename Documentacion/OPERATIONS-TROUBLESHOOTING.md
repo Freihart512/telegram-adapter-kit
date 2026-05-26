@@ -56,7 +56,7 @@ const runtime = createRuntimeManager(resolver, {
 | `mtproto message send failed` / `bot-api message send failed` | Fallo de proveedor mapeado a SDK. |
 | `best-effort adapter cleanup failed after operational interruption` | Tras timeout/cancel en `startBot`; revisar TT-047. |
 
-**Seguridad:** no loguear `botToken`, `apiHash`, `stringSession` completos. El SDK evita incluirlos en `meta`; tu app debe hacer lo mismo.
+**Seguridad:** no loguear `botToken`, `apiHash`, `stringSession` completos. El SDK enmascara `meta` de logs/errores (**TT-034**, [SECRETS-MASKING.md](SECRETS-MASKING.md)); tu app debe evitar re-filtrar secretos en campos custom o en `error.cause`.
 
 ---
 
