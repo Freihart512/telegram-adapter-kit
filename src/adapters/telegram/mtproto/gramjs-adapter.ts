@@ -84,6 +84,64 @@ const DEFAULT_CAPABILITIES: TelegramAdapterCapabilities = Object.freeze({
   supportsDynamicSubscriptions: true,
 });
 
+/** Typed GramJS peer reference from raw incoming events. */
+export type GramJsPeerRef = {
+  channelId?: bigint;
+  chatId?: bigint;
+  userId?: bigint;
+};
+
+type CanonicalPeerInput = bigint | number | string | GramJsPeerRef;
+
+function isGramJsPeerRef(value: CanonicalPeerInput): value is GramJsPeerRef {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value.channelId !== undefined || value.chatId !== undefined || value.userId !== undefined)
+  );
+}
+
+/**
+ * Canonical Telegram peer id for subscription matching.
+ * Preserves peer kind: channel `-100{id}`, basic group `-{id}`, user `{id}`.
+ */
+export function canonicalPeerId(peer: CanonicalPeerInput): string | undefined {
+  if (isGramJsPeerRef(peer)) {
+    if (peer.channelId !== undefined) {
+      return `-100${String(peer.channelId)}`;
+    }
+    if (peer.chatId !== undefined) {
+      return `-${String(peer.chatId)}`;
+    }
+    if (peer.userId !== undefined) {
+      return String(peer.userId);
+    }
+    return undefined;
+  }
+
+  const normalized = String(peer).trim();
+  if (!normalized) {
+    return undefined;
+  }
+  if (normalized.startsWith("-100") && normalized.length > 4) {
+    return normalized;
+  }
+  if (normalized.startsWith("-")) {
+    return normalized;
+  }
+  return normalized;
+}
+
+function toOptionalNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "bigint") {
+    return Number(value);
+  }
+  return undefined;
+}
+
 /**
  * MTProto adapter: lifecycle (TT-021), incoming bindings (TT-022),
  * outgoing messages (TT-023), and forum topic sends (TT-024).
@@ -369,15 +427,25 @@ export class GramJsMtprotoAdapter implements TelegramProviderAdapter {
     raw: GramJsRawEvent,
   ): IncomingMessageEvent | undefined {
     const msg = raw.message;
-    if (!msg) return undefined;
+    if (!msg?.peerId) {
+      return undefined;
+    }
 
-    const chatId = this.resolveChatId(msg.peerId);
-    if (chatId === undefined) return undefined;
+    const bindingKey = canonicalPeerId(binding.chatId);
+    const incomingKey = canonicalPeerId(msg.peerId);
+    if (bindingKey === undefined || incomingKey === undefined || bindingKey !== incomingKey) {
+      return undefined;
+    }
 
-    if (String(binding.chatId) !== String(chatId)) return undefined;
-
-    const topicId = msg.replyTo?.replyToTopId;
-    if (binding.topicId !== undefined && topicId !== binding.topicId) return undefined;
+    const topicId = this.resolveIncomingTopicId(msg);
+    if (binding.topicId !== undefined) {
+      if (topicId !== undefined && topicId !== binding.topicId) {
+        return undefined;
+      }
+      if (topicId === undefined) {
+        return undefined;
+      }
+    }
 
     const text = msg.message ?? undefined;
     if (binding.filters?.textIncludes?.length) {
@@ -386,24 +454,22 @@ export class GramJsMtprotoAdapter implements TelegramProviderAdapter {
       if (!matches) return undefined;
     }
 
-    return {
+    const result: IncomingMessageEvent = {
       botId,
-      chatId: String(chatId),
+      chatId: String(binding.chatId),
       messageId: msg.id ?? 0,
       text,
       date: msg.date ? new Date(msg.date * 1000) : new Date(),
       topicId,
       raw,
     };
+    return result;
   }
 
-  private resolveChatId(peerId?: {
-    channelId?: bigint;
-    chatId?: bigint;
-    userId?: bigint;
-  }): bigint | undefined {
-    if (!peerId) return undefined;
-    return peerId.channelId ?? peerId.chatId ?? peerId.userId;
+  private resolveIncomingTopicId(msg: NonNullable<GramJsRawEvent["message"]>): number | undefined {
+    const replyTo = msg.replyTo;
+    if (!replyTo) return undefined;
+    return toOptionalNumber(replyTo.replyToTopId) ?? toOptionalNumber(replyTo.replyToMsgId);
   }
 
   private async cleanupRecord(botId: string, rec: AdapterRecord): Promise<void> {
