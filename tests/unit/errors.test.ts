@@ -76,4 +76,20 @@ describe("errors (TT-011)", () => {
     });
     expect(err.meta).toEqual({ botId: "bot-1" });
   });
+
+  it("sanitizes secret fields in error meta (TT-034)", () => {
+    const token = "12345678:abcdefghijklmnopqrstuvwxyzABCDEF";
+    const err = new ValidationError("invalid", {
+      meta: { botToken: token, note: `token was ${token}` },
+    });
+    expect(err.meta?.botToken).toBe("1234****");
+    expect(String(err.meta?.note)).not.toContain(token);
+  });
+
+  it("mapUnknownToSdkError sanitizes provider messages with embedded tokens", () => {
+    const token = "12345678:abcdefghijklmnopqrstuvwxyzABCDEF";
+    const err = mapUnknownToSdkError(new Error(`Unauthorized ${token}`));
+    expect(err.message).not.toContain(token);
+    expect(err.message).toContain("1234****");
+  });
 });

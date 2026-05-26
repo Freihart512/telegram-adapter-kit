@@ -21,6 +21,8 @@ import { SubscriptionAlreadyExistsError } from "../../../errors/subscription-alr
 import { SubscriptionNotFoundError } from "../../../errors/subscription-not-found-error.js";
 import type { Logger } from "../../../observability/logger.js";
 import { NoopLogger } from "../../../observability/noop-logger.js";
+import { maskBotToken } from "../../../observability/secret-masking.js";
+import { createSafeLogger } from "../../../observability/safe-logger.js";
 import { mapBotApiProviderError } from "./map-bot-api-error.js";
 
 /**
@@ -85,11 +87,6 @@ const DEFAULT_CAPABILITIES: TelegramAdapterCapabilities = Object.freeze({
   supportsIncomingForumTopics: true,
   supportsDynamicSubscriptions: true,
 });
-
-function maskBotToken(token: string): string {
-  if (token.length <= 8) return "****";
-  return `${token.slice(0, 4)}****`;
-}
 
 function toApiChatId(chatId: bigint | number | string): number | string {
   if (typeof chatId === "bigint") {
@@ -182,7 +179,7 @@ export class BotApiAdapter implements TelegramProviderAdapter {
     deps?: { capabilities?: TelegramAdapterCapabilities; logger?: Logger },
   ) {
     this.capabilities = deps?.capabilities ?? DEFAULT_CAPABILITIES;
-    this.logger = deps?.logger ?? new NoopLogger();
+    this.logger = createSafeLogger(deps?.logger ?? new NoopLogger());
   }
 
   async registerBot(input: RegisterBotInput): Promise<void> {
