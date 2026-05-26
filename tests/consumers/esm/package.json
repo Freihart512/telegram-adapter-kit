@@ -1,0 +1,11 @@
+{
+  "name": "telegram-adapter-kit-consumer-esm-smoke",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "telegram-adapter-kit": "file:../.pack/telegram-adapter-kit-0.0.0.tgz"
+  }
+}
