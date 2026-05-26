@@ -37,6 +37,7 @@ Pre-1.0 (`0.x`): MINOR may include breaking changes; still prefer PATCH for fixe
    ```bash
    npm ci
    npm run test && npm run lint && npm run typecheck && npm run build
+   npm run verify:dist && npm run verify:consumers
    npm run release:version
    ```
 

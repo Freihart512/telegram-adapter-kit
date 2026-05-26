@@ -38,6 +38,7 @@
     "build": "tsup",
     "prepublishOnly": "npm run build",
     "verify:dist": "node --input-type=module -e \"import { LIBRARY_NAME } from './dist/index.mjs'; if (LIBRARY_NAME !== 'telegram-adapter-kit') process.exit(1);\" && node -e \"const { LIBRARY_NAME } = require('./dist/index.cjs'); if (LIBRARY_NAME !== 'telegram-adapter-kit') process.exit(1);\"",
+    "verify:consumers": "node scripts/verify-consumer-exports.mjs",
     "test": "vitest run",
     "test:contract": "vitest run tests/contract",
     "test:coverage": "vitest run --coverage",
