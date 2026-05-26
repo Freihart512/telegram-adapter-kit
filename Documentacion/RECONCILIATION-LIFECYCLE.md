@@ -23,9 +23,13 @@ No se revierte a `registered`/`stopped`: el registry queda en `error` para evita
 El consumidor debe:
 
 1. Revisar el error (`OPERATION_TIMEOUT` / `OPERATION_CANCELLED`).
-2. Si necesita limpiar el provider: llamar `stopBot` (desde `error` el registry permite `beginStop` → `stopping`). Cuando el bot este `stopped`, llamar `unregisterBot`.
+2. Llamar `stopBot` (desde `error` el registry permite `beginStop` → `stopping` → `stopped`).
 3. **No** llamar `unregisterBot` directamente desde `error` — el registry lo rechaza (`Resolve error state before unregistering`).
-4. Llamar `startBot` de nuevo solo cuando el estado y el adapter esten listos.
+4. Desde `stopped`, elegir una ruta:
+   - **Reinicio:** `startBot` de nuevo (mismo `botId` registrado) cuando el adapter este listo; re-`registerSubscription` si aplica.
+   - **Baja completa:** `unregisterBot` → `registerBot` → `startBot`. Tras `unregisterBot`, `startBot` solo devuelve `BOT_NOT_FOUND` hasta volver a registrar.
+
+Ver tambien [OPERATIONS-TROUBLESHOOTING.md §3.1](OPERATIONS-TROUBLESHOOTING.md).
 
 ### `stopBot` tras timeout/cancel
 
